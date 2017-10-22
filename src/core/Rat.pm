@@ -39,41 +39,39 @@ sub DIVIDE_NUMBERS(Int:D \nu, Int:D \de, $t1, $t2) {
     my Int $gcd         := de == 0 ?? 1 !! nu gcd de;
     my Int $numerator   := nu div $gcd;
     my Int $denominator := de div $gcd;
-    my $r;
     if $denominator < 0 {
         $numerator   := -$numerator;
         $denominator := -$denominator;
     }
-    if nqp::istype($t1, FatRat) || nqp::istype($t2, FatRat) {
-        $r := nqp::create(FatRat);
-        nqp::bindattr($r, FatRat, '$!numerator',   nqp::decont($numerator));
-        nqp::bindattr($r, FatRat, '$!denominator', nqp::decont($denominator));
-    } elsif $denominator < $UINT64_UPPER {
-        $r := nqp::create(Rat);
-        nqp::bindattr($r, Rat, '$!numerator',   nqp::decont($numerator));
-        nqp::bindattr($r, Rat, '$!denominator', nqp::decont($denominator));
-    } else {
-        $r := nqp::p6box_n(nqp::div_In(
+    nqp::istype($t1, FatRat) || nqp::istype($t2, FatRat)
+        ?? nqp::p6bindattrinvres(
+              nqp::p6bindattrinvres(
+                  nqp::create(FatRat),
+                  FatRat, '$!numerator', nqp::decont($numerator)),
+              FatRat, '$!denominator', nqp::decont($denominator))
+        !! $denominator < $UINT64_UPPER
+            ?? nqp::p6bindattrinvres(
+                  nqp::p6bindattrinvres(
+                      nqp::create(Rat),
+                      Rat, '$!numerator', nqp::decont($numerator)),
+                  Rat, '$!denominator', nqp::decont($denominator))
+            !! nqp::p6box_n(nqp::div_In(
                 nqp::decont($numerator),
-                nqp::decont($denominator)
-            )
-        );
-    }
-    $r;
+                nqp::decont($denominator)));
 }
 
 sub DON'T_DIVIDE_NUMBERS(Int:D \nu, Int:D \de, $t1, $t2) {
-    my $r;
-    if nqp::istype($t1, FatRat) || nqp::istype($t2, FatRat) {
-        $r := nqp::create(FatRat);
-        nqp::bindattr($r, FatRat, '$!numerator',   nqp::decont(nu));
-        nqp::bindattr($r, FatRat, '$!denominator', nqp::decont(de));
-    } else {
-        $r := nqp::create(Rat);
-        nqp::bindattr($r, Rat, '$!numerator',   nqp::decont(nu));
-        nqp::bindattr($r, Rat, '$!denominator', nqp::decont(de));
-    }
-    $r;
+    nqp::istype($t1, FatRat) || nqp::istype($t2, FatRat)
+        ?? nqp::p6bindattrinvres(
+              nqp::p6bindattrinvres(
+                  nqp::create(FatRat),
+                  FatRat, '$!numerator', nqp::decont(nu)),
+              FatRat, '$!denominator', nqp::decont(de))
+        !! nqp::p6bindattrinvres(
+              nqp::p6bindattrinvres(
+                  nqp::create(Rat),
+                  Rat, '$!numerator', nqp::decont(nu)),
+              Rat, '$!denominator', nqp::decont(de))
 }
 
 multi sub prefix:<->(Rat:D \a) {
