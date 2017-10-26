@@ -375,6 +375,7 @@ my class ThreadPoolScheduler does Scheduler {
                     $!affinity-workers := $workers;
                     scheduler-debug "Created initial affinity worker thread";
                     self!maybe-start-supervisor();
+                    scheduler-debug "Started supervisor in affinity worker init";
                     return $!affinity-workers[0].queue;
                 }
             }

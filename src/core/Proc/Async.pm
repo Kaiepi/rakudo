@@ -335,14 +335,24 @@ my class Proc::Async {
         nqp::bindkey($callbacks, 'stdout_fd', $!stdout-fd) if $!stdout-fd.DEFINITE;
         nqp::bindkey($callbacks, 'stderr_fd', $!stderr-fd) if $!stderr-fd.DEFINITE;
 
-        $!process_handle := nqp::spawnprocasync($scheduler.queue(:hint-affinity),
-            CLONE-LIST-DECONTAINERIZED($!path,@!args),
-            $cwd.Str,
-            CLONE-HASH-DECONTAINERIZED(%ENV),
+        my $q := $scheduler.queue;
+        %*ENV<ZZ> and say "ZZ0: $*THREAD.id() made q: " ~ $q.WHICH;
+        my $pargs := CLONE-LIST-DECONTAINERIZED($!path,@!args);
+        %*ENV<ZZ> and say "ZZ0: $*THREAD.id() made pargs: " ~ $pargs;
+        my $cwdstr := $cwd.Str;
+        %*ENV<ZZ> and say "ZZ0: $*THREAD.id() made cwdstr: $cwdstr.perl()";
+        my $envh := CLONE-HASH-DECONTAINERIZED(%ENV);
+        %*ENV<ZZ> and say "ZZ0: $*THREAD.id() made envh";
+        $!process_handle := nqp::spawnprocasync($q,
+            $pargs,
+            $cwdstr,
+            $envh,
             $callbacks,
         );
+        %*ENV<ZZ> and say "ZZ1: spawned";
         $!handle_available_promise.keep(True);
         nqp::permit($!process_handle, 0, -1) if $!merge_supply;
+        %*ENV<ZZ> and say "ZZ2: spawned";
         Promise.allof( $!exit_promise, @!promises ).then({
             .close for @!close-after-exit;
             $!exit_promise.status == Broken
