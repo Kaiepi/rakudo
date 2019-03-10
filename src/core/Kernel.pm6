@@ -189,6 +189,9 @@ class Kernel does Systemic {
           + nqp::atpos_i(@rusage, nqp::const::RUSAGE_STIME_MSEC)
     }
 
+    method free-mem(Kernel:D: --> Int)  { nqp::freemem()  }
+    method total-mem(Kernel:D: --> Int) { nqp::totalmem() }
+
     my $endian := nqp::null;
     method endian(--> Endian:D) {
         nqp::ifnull(
