@@ -122,15 +122,15 @@ my $Bootstrap-combined := combine(:sources('$(BOOTSTRAP_SOURCES)'), :file<Perl6-
 my $CORE-combined := $build_dir ~ "/CORE.setting";
 rule($CORE-combined, '@js_core_sources@',
     '@echo "The following step can take a very long time, please be patient."',
-    "\$(JS_NQP) \@script(gen-cat.nqp)@ js  -f \@ctx_template(core_sources)@ > {nfp($CORE-combined)}"
+    "\$(JS_NQP) \@script(gen-cat.nqp)@ js -f \@template(core_sources)@ > {nfp($CORE-combined)}"
 
 );
 
 say('@for_specs(');
 my $CORE-spec-combined := $build_dir ~ "/CORE.@lcspec@.setting";
-rule($CORE-spec-combined, '@ctx_template(js_core_sources)@',
+rule($CORE-spec-combined, '@template(core_sources)@',
     '@echo "The following step can take a very long time, please be patient."',
-    "\$(JS_NQP) \@script(gen-cat.nqp)@ js  -f \@ctx_template(js_core_sources)@ > {nfp($CORE-spec-combined)}"
+    "\$(JS_NQP) \@script(gen-cat.nqp)@ js -f \@template(core_sources)@ > {nfp($CORE-spec-combined)}"
 );
 say("\n)@");
 
