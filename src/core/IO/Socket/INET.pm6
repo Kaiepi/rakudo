@@ -25,10 +25,12 @@ my class IO::Socket::INET does IO::Socket {
     has Int  $.localport;
     has Int  $.backlog;
     has Bool $.listening;
-    has      $.family     = PIO::PF_INET;
+    has      $.family     = PIO::PF_UNSPEC;
     has      $.proto      = PIO::PROTO_TCP;
     has      $.type       = PIO::SOCK_STREAM;
 
+    # XXX: this could be a bit smarter about how it deals with unspecified
+    # families...
     my sub split-host-port(:$host is copy, :$port is copy, :$family) {
         if ($host) {
             my ($split-host, $split-port) = $family == PIO::PF_INET6
@@ -62,9 +64,10 @@ my class IO::Socket::INET does IO::Socket {
         Str    :$localhost is copy,
         Int    :$localport is copy,
         Int    :$family where {
-                $family == PIO::PF_INET
-             || $family == PIO::PF_INET6
-        } = PIO::PF_INET,
+               $family == PIO::PF_UNSPEC
+            || $family == PIO::PF_INET
+            || $family == PIO::PF_INET6
+        } = PIO::PF_UNSPEC,
                *%rest,
         --> IO::Socket::INET:D) {
 
@@ -87,9 +90,10 @@ my class IO::Socket::INET does IO::Socket {
         Str:D :$host! is copy,
         Int   :$port is copy,
         Int   :$family where {
-               $family == PIO::PF_INET
+               $family == PIO::PF_UNSPEC
+            || $family == PIO::PF_INET
             || $family == PIO::PF_INET6
-        } = PIO::PF_INET,
+        } = PIO::PF_UNSPEC,
               *%rest,
         --> IO::Socket::INET:D) {
 
