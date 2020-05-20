@@ -18,15 +18,15 @@ role IO::Address {
 }
 
 class IO::Address::UNIX does IO::Address {
-    method gist(::?CLASS:D: --> '?') { }
+    multi method gist(::?CLASS:D: --> '?') { }
 }
 
 role IO::Address::IP does IO::Address { }
 
 class IO::Address::IPv4 does IO::Address::IP {
-    method gist(::?CLASS:D: --> '?.?.?.?') { }
+    multi method gist(::?CLASS:D: --> '?.?.?.?') { }
 }
 
 class IO::Address::IPv6 does IO::Address::IP {
-    method gist(::?CLASS:D: --> '?:?:?:?:?:?:?:?') { }
+    multi method gist(::?CLASS:D: --> '?:?:?:?:?:?:?:?') { }
 }
