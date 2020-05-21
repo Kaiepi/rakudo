@@ -28,11 +28,8 @@ class IO::Address::UNIX does IO::Address {
         ProtocolType:D :$protocol = IPPROTO_TCP
         --> ::?CLASS:D
     ) {
-        my ::?CLASS:D $self := nqp::create(self);
-        nqp::bindattr($self, self.WHAT, '$!VM-address', nqp::addrfrompres(
-            nqp::unbox_s($path.Str), 0,
-            nqp::unbox_i(PF_UNIX.Int), nqp::unbox_i($type.Int), nqp::unbox_i($protocol.Int)));
-        $self
+        nqp::p6bindattrinvres(nqp::create(self), self.WHAT, '$!VM-address', nqp::addrfrompath(
+            nqp::unbox_s($path.Str), nqp::unbox_i($type.Int), nqp::unbox_i($protocol.Int)));
     }
     multi method new(
         ::?CLASS:_:
@@ -41,11 +38,8 @@ class IO::Address::UNIX does IO::Address {
         ProtocolType:D :$protocol = IPPROTO_TCP
         --> ::?CLASS:D
     ) {
-        my ::?CLASS:D $self := nqp::create(self);
-        nqp::bindattr($self, self.WHAT, '$!VM-address', nqp::addrfrompres(
-            nqp::decont_s($path), 0,
-            nqp::unbox_i(PF_UNIX.Int), nqp::unbox_i($type.Int), nqp::unbox_i($protocol.Int)));
-        $self
+        nqp::p6bindattrinvres(nqp::create(self), self.WHAT, '$!VM-address', nqp::addrfrompath(
+            nqp::decont_s($path), nqp::unbox_i($type.Int), nqp::unbox_i($protocol.Int)));
     }
 
 }
@@ -61,11 +55,9 @@ class IO::Address::IPv4 does IO::Address::IP {
         ProtocolType:D :$protocol = IPPROTO_TCP
         --> ::?CLASS:D
     ) {
-        my ::?CLASS:D $self := nqp::create(self);
-        nqp::bindattr($self, self.WHAT, '$!VM-address', nqp::addrfrompres(
+        nqp::p6bindattrinvres(nqp::create(self), self.WHAT, '$!VM-address', nqp::addrfromipv4(
             nqp::decont_s($ip), nqp::decont_i($port),
-            nqp::unbox_i(PF_INET.Int), nqp::unbox_i($type.Int), nqp::unbox_i($protocol.Int)));
-        $self
+            nqp::unbox_i($type.Int), nqp::unbox_i($protocol.Int)))
     }
 }
 
@@ -74,14 +66,14 @@ class IO::Address::IPv6 does IO::Address::IP {
         ::?CLASS:_:
         Str:D           $ip,
         Int:D           $port,
+        UInt:D         :$flowinfo = 0,
+        UInt:D         :$scope-id = 0,
         SocketType:D   :$type     = SOCK_STREAM,
         ProtocolType:D :$protocol = IPPROTO_TCP
         --> ::?CLASS:D
     ) {
-        my ::?CLASS:D $self := nqp::create(self);
-        nqp::bindattr($self, self.WHAT, '$!VM-address', nqp::addrfrompres(
-            nqp::decont_s($ip), nqp::decont_i($port),
-            nqp::unbox_i(PF_INET6.Int), nqp::unbox_i($type.Int), nqp::unbox_i($protocol.Int)));
-        $self
+        nqp::p6bindattrinvres(nqp::create(self), self.WHAT, '$!VM-address', nqp::addrfromipv6(
+            nqp::decont_s($ip), nqp::decont_i($port), nqp::decont_i($flowinfo), nqp::decont_i($scope-id),
+            nqp::unbox_i($type.Int), nqp::unbox_i($protocol.Int)))
     }
 }
