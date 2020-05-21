@@ -15,7 +15,7 @@ role IO::Address {
         ProtocolType(nqp::p6box_i(nqp::addrprotocol($!VM-address)))
     }
 
-    multi method gist(::?CLASS:D: --> Str:D) {
+    multi method Str(::?CLASS:D: --> Str:D) {
         nqp::p6box_s(nqp::addrtopres($!VM-address))
     }
 }
@@ -41,6 +41,18 @@ class IO::Address::UNIX does IO::Address {
         nqp::p6bindattrinvres(nqp::create(self), self.WHAT, '$!VM-address', nqp::addrfrompath(
             nqp::decont_s($path), nqp::unbox_i($type.Int), nqp::unbox_i($protocol.Int)));
     }
+
+    multi method gist(::?CLASS:D: --> Str:D) { self.Str }
+
+    multi method raku(::?CLASS:D: --> Str:D) {
+        my SocketType:D   $type     = $.type;
+        my ProtocolType:D $protocol = $.protocol;
+        my Str:D          $raku     = "IO::Address::UNIX.new($.Str.raku()";
+        $raku ~= ", type => $type.raku()" unless $type ~~ SOCK_STREAM;
+        $raku ~= ", protocol => $protocol.raku()" unless $protocol ~~ IPPROTO_TCP;
+        $raku ~= ')';
+        $raku
+    }
 }
 
 role IO::Address::IP does IO::Address {
@@ -65,6 +77,18 @@ class IO::Address::IPv4 does IO::Address::IP {
 
     method port(::?CLASS:D: --> Int:D) {
         nqp::p6box_i(nqp::addrport($!VM-address))
+    }
+
+    multi method gist(::?CLASS:D $self: --> Str:D) { "$self:$.port" }
+
+    multi method raku(::?CLASS:D: --> Str:D) {
+        my SocketType:D   $type     = $.type;
+        my ProtocolType:D $protocol = $.protocol;
+        my Str:D          $raku     = "IO::Address::IPv4.new($.Str.raku(), $.port.raku()";
+        $raku ~= ", type => $type.raku()" unless $type ~~ SOCK_STREAM;
+        $raku ~= ", protocol => $protocol.raku()" unless $protocol ~~ IPPROTO_TCP;
+        $raku ~= ')';
+        $raku
     }
 }
 
@@ -94,5 +118,21 @@ class IO::Address::IPv6 does IO::Address::IP {
 
     method scope-id(::?CLASS:D: --> Int:D) {
         nqp::p6box_i(nqp::addrscopeid($!VM-address))
+    }
+
+    multi method gist(::?CLASS:D $self: --> Str:D) { "[$self]:$.port" }
+
+    multi method raku(::?CLASS:D: --> Str:D) {
+        my Int:D          $flowinfo = $.flowinfo;
+        my Int:D          $scope-id = $.scope-id;
+        my SocketType:D   $type     = $.type;
+        my ProtocolType:D $protocol = $.protocol;
+        my Str:D          $raku     = "IO::Address::IPv6.new($.Str.raku(), $.port.raku()";
+        $raku ~= ", flowinfo => $flowinfo.raku()" unless $flowinfo == 0;
+        $raku ~= ", scope-id => $scope-id.raku()" unless $scope-id == 0;
+        $raku ~= ", type => $type.raku()" unless $type ~~ SOCK_STREAM;
+        $raku ~= ", protocol => $protocol.raku()" unless $protocol ~~ IPPROTO_TCP;
+        $raku ~= ')';
+        $raku
     }
 }
