@@ -65,7 +65,7 @@ class IO::Address::IPv4 does IO::Address::IP {
     multi method new(
         ::?CLASS:_:
         Str:D           $ip,
-        Int:D           $port,
+        Int:D           $port     = 0,
         SocketType:D   :$type     = SOCK_STREAM,
         ProtocolType:D :$protocol = IPPROTO_TCP
         --> ::?CLASS:D
@@ -82,9 +82,11 @@ class IO::Address::IPv4 does IO::Address::IP {
     multi method gist(::?CLASS:D $self: --> Str:D) { "$self:$.port" }
 
     multi method raku(::?CLASS:D: --> Str:D) {
+        my Int:D          $port     = $.port;
         my SocketType:D   $type     = $.type;
         my ProtocolType:D $protocol = $.protocol;
-        my Str:D          $raku     = "IO::Address::IPv4.new($.Str.raku(), $.port.raku()";
+        my Str:D          $raku     = "IO::Address::IPv4.new($.Str.raku()";
+        $raku ~= ", $port.raku()" unless $port == 0;
         $raku ~= ", type => $type.raku()" unless $type ~~ SOCK_STREAM;
         $raku ~= ", protocol => $protocol.raku()" unless $protocol ~~ IPPROTO_TCP;
         $raku ~= ')';
@@ -96,7 +98,7 @@ class IO::Address::IPv6 does IO::Address::IP {
     multi method new(
         ::?CLASS:_:
         Str:D           $ip,
-        Int:D           $port,
+        Int:D           $port     = 0,
         UInt:D         :$flowinfo = 0,
         UInt:D         :$scope-id = 0,
         SocketType:D   :$type     = SOCK_STREAM,
@@ -123,11 +125,13 @@ class IO::Address::IPv6 does IO::Address::IP {
     multi method gist(::?CLASS:D $self: --> Str:D) { "[$self]:$.port" }
 
     multi method raku(::?CLASS:D: --> Str:D) {
+        my Int:D          $port     = $.port;
         my Int:D          $flowinfo = $.flowinfo;
         my Int:D          $scope-id = $.scope-id;
         my SocketType:D   $type     = $.type;
         my ProtocolType:D $protocol = $.protocol;
-        my Str:D          $raku     = "IO::Address::IPv6.new($.Str.raku(), $.port.raku()";
+        my Str:D          $raku     = "IO::Address::IPv6.new($.Str.raku()";
+        $raku ~= ", $port.raku()" unless $port == 0;
         $raku ~= ", flowinfo => $flowinfo.raku()" unless $flowinfo == 0;
         $raku ~= ", scope-id => $scope-id.raku()" unless $scope-id == 0;
         $raku ~= ", type => $type.raku()" unless $type ~~ SOCK_STREAM;
