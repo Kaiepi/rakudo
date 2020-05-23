@@ -29,6 +29,10 @@ class IO::Resolver {
     }
 }
 
+Rakudo::Internals.REGISTER-DYNAMIC: '$*RESOLVER', {
+    PROCESS::<$RESOLVER> := IO::Resolver.new;
+};
+
 Rakudo::Internals.REGISTER-DYNAMIC: '&*CONNECT', {
     PROCESS::<&CONNECT> := sub CONNECT(Iterable:D $addresses is raw, &callback --> Mu) {
         callback $addresses.head
