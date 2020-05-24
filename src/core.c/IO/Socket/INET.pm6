@@ -1,14 +1,13 @@
 my class IO::Socket::INET does IO::Socket {
     my module PIO {
-        constant SOCK_PACKET    = 0;
         constant SOCK_STREAM    = 1;
         constant SOCK_DGRAM     = 2;
         constant SOCK_RAW       = 3;
         constant SOCK_RDM       = 4;
         constant SOCK_SEQPACKET = 5;
-        constant SOCK_MAX       = 6;
-        constant PROTO_TCP      = 6;
-        constant PROTO_UDP      = 17;
+        constant IPPROTO_ANY    = 0;
+        constant IPPROTO_TCP    = 1;
+        constant IPPROTO_UDP    = 2;
         constant MIN_PORT       = 0;
         constant MAX_PORT       = 65_535; # RFC 793: TCP/UDP port limit
     }
@@ -20,8 +19,8 @@ my class IO::Socket::INET does IO::Socket {
     has Int  $.backlog;
     has Bool $.listening;
     has      $.family     = nqp::const::SOCKET_FAMILY_UNSPEC;
-    has      $.proto      = PIO::PROTO_TCP;
     has      $.type       = PIO::SOCK_STREAM;
+    has      $.proto      = PIO::IPPROTO_ANY;
 
     # XXX: this could be a bit smarter about how it deals with unspecified
     # families...
@@ -121,19 +120,57 @@ my class IO::Socket::INET does IO::Socket {
         # If Listen is defined then a listen socket is created, else if the socket type,
         # which is derived from the protocol, is SOCK_STREAM then connect() is called.
         if $!listening || $!localhost || $!localport {
-            nqp::bindsock($PIO, nqp::unbox_s($!localhost || "0.0.0.0"),
-                                 nqp::unbox_i($!localport || 0), nqp::unbox_i($!family),
-                                 nqp::unbox_i($!backlog || 128));
+            if $!family == nqp::const::SOCKET_FAMILY_UNIX {
+                my IO::Address::UNIX:D $address := IO::Address::UNIX.new:
+                    $!localhost,
+                    type     => SocketType($!type),
+                    protocol => ProtocolType($!proto);
+                nqp::bindsock($PIO,
+                    nqp::getattr($address, $address.WHAT, '$!VM-address'),
+                    nqp::unbox_i($!backlog || 128));
+            }
+            else {
+                my Iterable:D $addresses := $*RESOLVER.resolve:
+                    $!localhost || '0.0.0.0', $!localport || 0,
+                    family   => ProtocolFamily($!family),
+                    type     => SocketType($!type),
+                    protocol => ProtocolType($!proto),
+                    passive  => True;
+                &*CONNECT($addresses, sub (IO::Address:D $address) {
+                    nqp::bindsock($PIO,
+                        nqp::getattr(nqp::decont($address), $address.WHAT, '$!VM-address'),
+                        nqp::unbox_i($!backlog || 128))
+                });
+            }
         }
 
         if $!listening {
 #?if !js
             $!localport = nqp::getport($PIO)
-                   unless $!localport || ($!family == nqp::const::SOCKET_FAMILY_UNIX);
+                  unless $!localport || ($!family == nqp::const::SOCKET_FAMILY_UNIX);
 #?endif
         }
+        # XXX: Compiler bugs a-plenty if you make the two following elsifs one elsif with
+        # an if block inside it!
+        elsif $!type == PIO::SOCK_STREAM && $!family == nqp::const::SOCKET_FAMILY_UNIX {
+            my IO::Address::UNIX:D $address := IO::Address::UNIX.new:
+                $!host,
+                type     => SocketType($!type),
+                protocol => ProtocolType($!proto);
+            nqp::connect($PIO,
+                nqp::getattr($address, $address.WHAT, '$!VM-address'));
+        }
         elsif $!type == PIO::SOCK_STREAM {
-            nqp::connect($PIO, nqp::unbox_s($!host), nqp::unbox_i($!port), nqp::unbox_i($!family));
+            my Iterable:D $addresses := $*RESOLVER.resolve:
+                $!host, $!port,
+                family   => ProtocolFamily($!family),
+                type     => SocketType($!type),
+                protocol => ProtocolType($!proto),
+                passive  => True; # For the sake of compatibility with older compiler releases.
+            &*CONNECT($addresses, sub (IO::Address:D $address) {
+                nqp::connect($PIO,
+                    nqp::getattr(nqp::decont($address), $address.WHAT, '$!VM-address'))
+            });
         }
 
         nqp::bindattr(self, $?CLASS, '$!PIO', $PIO);
