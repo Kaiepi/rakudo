@@ -19,6 +19,7 @@ enum ProtocolFamily (
 
 # TODO: These should be nqp constants.
 enum SocketType (
+  :SOCK_ANY(0),
   :SOCK_STREAM(1),
   :SOCK_DGRAM(2),
   :SOCK_RAW(3),
@@ -30,6 +31,7 @@ enum SocketType (
 # TODO: More protocols will be needed eventually, once support for socket
 # options and raw sockets exists.
 enum ProtocolType (
+  :IPPROTO_ANY(0),
   :IPPROTO_TCP(1),
   :IPPROTO_UDP(2),
 );
