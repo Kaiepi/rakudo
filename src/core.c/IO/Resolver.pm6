@@ -9,22 +9,22 @@ class IO::Resolver {
         Bool:D           :$passive  = True,
         --> Iterable:D
     ) {
-        gather {
-            my @addresses := nqp::hllize(nqp::getaddrinfo(
-                nqp::decont_s($host), nqp::decont_i($port),
-                nqp::unbox_i($family.Int), nqp::unbox_i($type.Int), nqp::unbox_i($protocol.Int),
-                nqp::unbox_i($passive.Int)));
-            for @addresses {
-                my Mu \T = do given nqp::p6box_i(nqp::addrfamily($_)) {
-                    when PF_INET  { IO::Address::IPv4 }
-                    when PF_INET6 { IO::Address::IPv6 }
-                    when PF_UNIX  { IO::Address::UNIX } # Should never happen.
-                    default       { IO::Address.^pun  } # Ditto.
-                };
-                my $address := nqp::create(T);
-                nqp::bindattr($address, T, '$!VM-address', $_);
-                take $address;
-            }
+        gather for nqp::hllize(nqp::getaddrinfo(
+            nqp::decont_s($host), nqp::decont_i($port),
+            nqp::unbox_i($family.Int), nqp::unbox_i($type.Int), nqp::unbox_i($protocol.Int),
+            nqp::unbox_i($passive.Int)))
+            -> (Mu $VM-address is raw, Int:D $family, Int:D $type, Int:D $protocol)
+        {
+            my Mu \A = do given $family {
+                when PF_INET  { IO::Address::IPv4 }
+                when PF_INET6 { IO::Address::IPv6 }
+                when PF_UNIX  { IO::Address::UNIX } # Should never happen.
+                default       { IO::Address.^pun  } # Ditto.
+            };
+            my $address := nqp::p6bindattrinvres(nqp::create(A), A, '$!VM-address', $VM-address);
+            nqp::bindattr($address, A, '$!type', SocketType($type));
+            nqp::bindattr($address, A, '$!protocol', ProtocolType($type));
+            take $address;
         }
     }
 }

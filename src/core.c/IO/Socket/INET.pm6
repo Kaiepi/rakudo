@@ -126,6 +126,7 @@ my class IO::Socket::INET does IO::Socket {
                     type     => SocketType($!type),
                     protocol => ProtocolType($!proto);
                 nqp::bindsock($PIO,
+                    nqp::unbox_i($!family), nqp::unbox_i($!type), nqp::unbox_i($!proto),
                     nqp::getattr($address, $address.WHAT, '$!VM-address'),
                     nqp::unbox_i($!backlog || 128));
             }
@@ -138,6 +139,7 @@ my class IO::Socket::INET does IO::Socket {
                     passive  => True;
                 &*CONNECT($addresses, sub (IO::Address:D $address) {
                     nqp::bindsock($PIO,
+                        nqp::unbox_i(+$address.family), nqp::unbox_i(+$address.type), nqp::unbox_i(+$address.protocol),
                         nqp::getattr(nqp::decont($address), $address.WHAT, '$!VM-address'),
                         nqp::unbox_i($!backlog || 128))
                 });
@@ -158,6 +160,7 @@ my class IO::Socket::INET does IO::Socket {
                 type     => SocketType($!type),
                 protocol => ProtocolType($!proto);
             nqp::connect($PIO,
+                nqp::unbox_i($!family), nqp::unbox_i($!type), nqp::unbox_i($!proto),
                 nqp::getattr($address, $address.WHAT, '$!VM-address'));
         }
         elsif $!type == PIO::SOCK_STREAM {
@@ -169,6 +172,7 @@ my class IO::Socket::INET does IO::Socket {
                 passive  => True; # For the sake of compatibility with older compiler releases.
             &*CONNECT($addresses, sub (IO::Address:D $address) {
                 nqp::connect($PIO,
+                    nqp::unbox_i(+$address.family), nqp::unbox_i(+$address.type), nqp::unbox_i(+$address.protocol),
                     nqp::getattr(nqp::decont($address), $address.WHAT, '$!VM-address'))
             });
         }
