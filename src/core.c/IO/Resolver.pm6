@@ -1,6 +1,6 @@
 class IO::Resolver {
     method resolve(
-        ::?CLASS:_:
+        ::?CLASS:D:
         Str:D             $host,
         Int:D             $port,
         ProtocolFamily:D :$family   = PF_UNSPEC,
