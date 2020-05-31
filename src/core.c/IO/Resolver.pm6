@@ -1,4 +1,4 @@
-class IO::Resolver {
+my class IO::Resolver {
     method resolve(
         ::?CLASS:D:
         Str:D             $host,
