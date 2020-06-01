@@ -16,8 +16,8 @@ class IO::Address::UNIX does IO::Address[PF_UNIX] {
     multi method new(
         ::SELF ::?CLASS:_:
         IO::Path:D      $path,
-        SocketType:D   :$type     = SOCK_STREAM,
-        ProtocolType:D :$protocol = IPPROTO_TCP
+        SocketType:D   :$type     = SOCK_ANY,
+        ProtocolType:D :$protocol = IPPROTO_ANY
         --> ::?CLASS:D
     ) {
         my ::?CLASS:D $self :=
@@ -30,8 +30,8 @@ class IO::Address::UNIX does IO::Address[PF_UNIX] {
     multi method new(
         ::SELF ::?CLASS:_:
         Str:D           $path,
-        SocketType:D   :$type     = SOCK_STREAM,
-        ProtocolType:D :$protocol = IPPROTO_TCP
+        SocketType:D   :$type     = SOCK_ANY,
+        ProtocolType:D :$protocol = IPPROTO_ANY
         --> ::?CLASS:D
     ) {
         my ::?CLASS:D $self :=
@@ -62,8 +62,8 @@ class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
         ::SELF ::?CLASS:_:
         Str:D           $ip,
         Int:D           $port     = 0,
-        SocketType:D   :$type     = SOCK_STREAM,
-        ProtocolType:D :$protocol = IPPROTO_TCP
+        SocketType:D   :$type     = SOCK_ANY,
+        ProtocolType:D :$protocol = IPPROTO_ANY
         --> ::?CLASS:D
     ) {
         my ::?CLASS:D $self :=
@@ -98,8 +98,8 @@ class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
         Int:D           $port     = 0,
         UInt:D         :$flowinfo = 0,
         UInt:D         :$scope-id = 0,
-        SocketType:D   :$type     = SOCK_STREAM,
-        ProtocolType:D :$protocol = IPPROTO_TCP
+        SocketType:D   :$type     = SOCK_ANY,
+        ProtocolType:D :$protocol = IPPROTO_ANY
         --> ::?CLASS:D
     ) {
         my ::?CLASS:D $self :=

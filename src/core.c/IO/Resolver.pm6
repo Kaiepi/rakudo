@@ -4,8 +4,8 @@ my class IO::Resolver {
         Str:D             $host,
         Int:D             $port,
         ProtocolFamily:D :$family   = PF_UNSPEC,
-        SocketType:D     :$type     = SOCK_STREAM,
-        ProtocolType:D   :$protocol = IPPROTO_TCP,
+        SocketType:D     :$type     = SOCK_ANY,
+        ProtocolType:D   :$protocol = IPPROTO_ANY,
         Bool:D           :$passive  = True,
         --> Iterable:D
     ) {
