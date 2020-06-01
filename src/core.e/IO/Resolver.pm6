@@ -33,7 +33,7 @@ my class IO::Resolver {
         PF_INET :$family!;; AddressType:D :$type = SOCK_ANY, AddressProtocol:D :$protocol = IPPROTO_ANY
         --> Iterable:D
     ) {
-        lazy gather {
+        gather {
             my (@ipv4-solutions, @) := take-a-hint $family, $type, $protocol;
             for await self.query: $host, T_A, C_IN -> Str:D $presentation {
                 for @ipv4-solutions -> ($type, $protocol) {
@@ -48,7 +48,7 @@ my class IO::Resolver {
         PF_INET6 :$family!;; AddressType:D :$type = SOCK_ANY, AddressProtocol:D :$protocol = IPPROTO_ANY
         --> Iterable:D
     ) {
-        lazy gather {
+        gather {
             my (@, @ipv6-solutions) := take-a-hint $family, $type, $protocol;
             for await self.query: $host, T_AAAA, C_IN -> Str:D $presentation {
                 for @ipv6-solutions -> ($type, $protocol) {
@@ -64,7 +64,7 @@ my class IO::Resolver {
         --> Iterable:D
     ) {
         # Implementation of RFC8305 (Happy Eyeballs v2):
-        lazy gather {
+        gather {
             my (@ipv4-solutions, @ipv6-solutions) := take-a-hint $family, $type, $protocol;
 
             my Queue:D                   $queue     := nqp::create(Queue);
