@@ -26,93 +26,102 @@ my class IO::Resolver {
 
     my class Queue is repr('ConcBlockingQueue') { }
 
-    method resolve(
+    proto method resolve(::?CLASS:D: Str:D, Int:D --> Iterable:D) {*}
+    multi method resolve(
         ::?CLASS:D:
-        Str:D            $host,
-        Int:D            $port,
-        AddressFamily   :$family   = PF_UNSPEC,
-        AddressType     :$type     = SOCK_ANY,
-        AddressProtocol :$protocol = IPPROTO_ANY
+        $host, $port,
+        PF_INET :$family!;; AddressType:D :$type = SOCK_ANY, AddressProtocol:D :$protocol = IPPROTO_ANY
         --> Iterable:D
     ) {
-        given $family {
+        lazy gather {
+            my (@ipv4-solutions, @) := take-a-hint $family, $type, $protocol;
+            for await self.query: $host, T_A, C_IN -> Str:D $presentation {
+                for @ipv4-solutions -> ($type, $protocol) {
+                    take IO::Address::IPv4.new: $presentation, $port, :$type, :$protocol;
+                }
+            }
+        }
+    }
+    multi method resolve(
+        ::?CLASS:D:
+        $host, $port,
+        PF_INET6 :$family!;; AddressType:D :$type = SOCK_ANY, AddressProtocol:D :$protocol = IPPROTO_ANY
+        --> Iterable:D
+    ) {
+        lazy gather {
+            my (@, @ipv6-solutions) := take-a-hint $family, $type, $protocol;
+            for await self.query: $host, T_AAAA, C_IN -> Str:D $presentation {
+                for @ipv6-solutions -> ($type, $protocol) {
+                    take IO::Address::IPv6.new: $presentation, $port, :$type, :$protocol;
+                }
+            }
+        }
+    }
+    multi method resolve(
+        ::?CLASS:D:
+        $host, $port,
+        PF_UNSPEC :$family = PF_UNSPEC;; AddressType:D :$type = SOCK_ANY, AddressProtocol:D :$protocol = IPPROTO_ANY
+        --> Iterable:D
+    ) {
+        # Implementation of RFC8305 (Happy Eyeballs v2):
+        lazy gather {
             my (@ipv4-solutions, @ipv6-solutions) := take-a-hint $family, $type, $protocol;
 
-            when PF_INET {
-                lazy gather for await self.query: $host, T_A, C_IN -> Str:D $presentation {
-                    for @ipv4-solutions -> ($type, $protocol) {
-                        take IO::Address::IPv4.new: $presentation, $port, :$type, :$protocol;
-                    }
+            my Queue:D                   $queue     := nqp::create(Queue);
+            my Bool:D                    $init      := False;
+            my Lock:D                    $init_lock := Lock.new;
+            my Lock::ConditionVariable:D $init_cond := $init_lock.condition;
+
+            my &try-to-proceed := {
+                unless $init {
+                    $init := True;
+                    $init_cond.signal;
                 }
-            }
-            when PF_INET6 {
-                lazy gather for await self.query: $host, T_AAAA, C_IN -> Str:D $presentation {
-                    for @ipv6-solutions -> ($type, $protocol) {
-                        take IO::Address::IPv6.new: $presentation, $port, :$type, :$protocol;
+            };
+
+            $init_lock.lock;
+            $*SCHEDULER.cue({
+                # Begin by making an AAAA query followed by an A query,
+                # in parallel, as closely together as we can:
+                await Promise.allof(start {
+                    for await self.query: $host, T_AAAA, C_IN -> Str:D $presentation {
+                        # If an IPv6 address was the first address
+                        # received, then go ahead with connecting now:
+                        FIRST try-to-proceed;
+                        # Complete our IPv6 address(es) and push them to
+                        # the queue:
+                        for @ipv6-solutions -> ($type, $protocol) {
+                            my IO::Address::IPv6 \address .= new: $presentation, $port, :$type, :$protocol;
+                            nqp::push($queue, address);
+                        }
                     }
-                }
-            }
-            when PF_UNSPEC {
-                # Implementation of RFC8305 (Happy Eyeballs v2):
-                lazy gather {
-                    my Queue:D                   $queue     := nqp::create(Queue);
-                    my Bool:D                    $init      := False;
-                    my Lock:D                    $init_lock := Lock.new;
-                    my Lock::ConditionVariable:D $init_cond := $init_lock.condition;
-
-                    $init_lock.lock;
-                    $*SCHEDULER.cue({
-                        # Begin by making an AAAA query followed by an A query,
-                        # in parallel, as closely together as we can:
-                        await Promise.allof(start {
-                            for await self.query: $host, T_AAAA, C_IN -> Str:D $presentation {
-                                # If an IPv6 address was the first address
-                                # received, then go ahead with connecting now:
-                                FIRST unless $init {
-                                    $init := True;
-                                    $init_cond.signal;
-                                }
-
-                                # Complete our IPv6 address(es) and push them to
-                                # the queue:
-                                for @ipv6-solutions -> ($type, $protocol) {
-                                    my IO::Address::IPv6 \address .= new: $presentation, $port, :$type, :$protocol;
-                                    nqp::push($queue, address);
-                                }
-                            }
-                        }, start {
-                            for await self.query: $host, T_A, C_IN -> Str:D $presentation {
-                                # If the first address we wind up receiving is an
-                                # IPv4 one, then await the recommended resolution
-                                # delay of 50ms before proceeding to connect with
-                                # any addresses received during that point, so
-                                # long as they're all IPv4 addresses:
-                                FIRST $*SCHEDULER.cue({
-                                    unless $init {
-                                        $init := True;
-                                        $init_cond.signal;
-                                    }
-                                }, in => 0.050) unless $init;
-
-                                # Complete our IPv4 address(es) and push them
-                                # to the queue:
-                                for @ipv4-solutions -> ($type, $protocol) {
-                                    my IO::Address::IPv4 \address .= new: $presentation, $port, :$type, :$protocol;
-                                    nqp::push($queue, address);
-                                }
-                            }
-                        }).then({
-                            # Mark the end of the queue:
-                            nqp::push($queue, IO::Address);
-                        });
-                    });
-                    $init_cond.wait;
-                    $init_lock.unlock;
-
-                    until (my IO::Address:_ $address := nqp::shift($queue)) =:= IO::Address {
-                        take $address;
+                }, start {
+                    for await self.query: $host, T_A, C_IN -> Str:D $presentation {
+                        # If the first address we wind up receiving is an
+                        # IPv4 one, then await the recommended resolution
+                        # delay of 50ms before proceeding to connect with
+                        # any addresses received during that point, so
+                        # long as they're all IPv4 addresses:
+                        FIRST $*SCHEDULER.cue: &try-to-proceed, in => 0.050 unless $init;
+                        # Complete our IPv4 address(es) and push them
+                        # to the queue:
+                        for @ipv4-solutions -> ($type, $protocol) {
+                            my IO::Address::IPv4 \address .= new: $presentation, $port, :$type, :$protocol;
+                            nqp::push($queue, address);
+                        }
                     }
-                }
+                }).then({
+                    # Mark the end of the queue:
+                    nqp::push($queue, IO::Address);
+                    # Ensure we can proceed to sort and connect:
+                    try-to-proceed;
+                });
+            });
+            $init_cond.wait;
+            $init_lock.unlock;
+
+            until (my IO::Address:_ $address := nqp::shift($queue)) =:= IO::Address {
+                take $address;
             }
         }
     }
