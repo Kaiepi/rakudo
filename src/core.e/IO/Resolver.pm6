@@ -1,12 +1,10 @@
 my class IO::Resolver is repr('Resolver') { ... }
 
-# TODO: nqp constants
 enum IO::Resolver::Type (
     T_A    => 1,
     T_AAAA => 28,
 );
 
-# TODO: nqp constants
 enum IO::Resolver::Class (
     C_IN => 1,
 );
@@ -30,7 +28,9 @@ my class IO::Resolver {
     multi method resolve(
         ::?CLASS:D:
         $host, $port,
-        PF_INET :$family!;; AddressType:D :$type = SOCK_ANY, AddressProtocol:D :$protocol = IPPROTO_ANY
+        PF_INET           :$family!;;
+        AddressType:D     :$type      = SOCK_ANY,
+        AddressProtocol:D :$protocol  = IPPROTO_ANY
         --> Iterable:D
     ) {
         gather {
@@ -45,7 +45,9 @@ my class IO::Resolver {
     multi method resolve(
         ::?CLASS:D:
         $host, $port,
-        PF_INET6 :$family!;; AddressType:D :$type = SOCK_ANY, AddressProtocol:D :$protocol = IPPROTO_ANY
+        PF_INET6          :$family!;;
+        AddressType:D     :$type      = SOCK_ANY,
+        AddressProtocol:D :$protocol  = IPPROTO_ANY
         --> Iterable:D
     ) {
         gather {
@@ -60,7 +62,9 @@ my class IO::Resolver {
     multi method resolve(
         ::?CLASS:D:
         $host, $port,
-        PF_UNSPEC :$family = PF_UNSPEC;; AddressType:D :$type = SOCK_ANY, AddressProtocol:D :$protocol = IPPROTO_ANY
+        PF_UNSPEC         :$family   = PF_UNSPEC;;
+        AddressType:D     :$type     = SOCK_ANY,
+        AddressProtocol:D :$protocol = IPPROTO_ANY
         --> Iterable:D
     ) {
         # Implementation of RFC8305 (Happy Eyeballs v2):
@@ -83,7 +87,7 @@ my class IO::Resolver {
             $*SCHEDULER.cue({
                 # Begin by making an AAAA query followed by an A query,
                 # in parallel, as closely together as we can:
-                await Promise.allof(start {
+                await start {
                     for await self.query: $host, T_AAAA, C_IN -> Str:D $presentation {
                         # If an IPv6 address was the first address
                         # received, then go ahead with connecting now:
@@ -110,12 +114,13 @@ my class IO::Resolver {
                             nqp::push($queue, address);
                         }
                     }
-                }).then({
+                };
+                LEAVE {
                     # Mark the end of the queue:
                     nqp::push($queue, IO::Address);
                     # Ensure we can proceed to sort and connect:
                     try-to-proceed;
-                });
+                }
             });
             $init_cond.wait;
             $init_lock.unlock;
