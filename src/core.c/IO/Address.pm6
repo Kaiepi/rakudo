@@ -87,7 +87,7 @@ class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
         IO::Address::IPv6.new: "::FFFF:$self", $.port, :$.type, :$.protocol
     }
     multi method upgrade(::?CLASS:D $self: Bool:D :compatible($)! where ?*) {
-        IO::Address::IPv4.new: "::$self", $.port, :$.type, :$.protocol
+        IO::Address::IPv6.new: "::$self", $.port, :$.type, :$.protocol
     }
 
     multi method gist(::?CLASS:D $self: --> Str:D) { "$self:$.port" }

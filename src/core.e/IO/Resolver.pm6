@@ -10,19 +10,46 @@ enum IO::Resolver::Class (
 );
 
 my class IO::Resolver {
+    my class Queue     is repr('ConcBlockingQueue') { }
+    my class AsyncTask is repr('AsyncTask')         { }
+
     proto method query(::?CLASS:D: Str:D, ::Type:D, ::Class:D --> Promise:D) {*}
-    multi method query(::?CLASS:D: Str:D $name, T_A $type, ::Class:D $class --> Promise:D) {
-        start nqp::dnsquery(self, nqp::decont_s($name), nqp::unbox_i($type.value), nqp::unbox_i($class.value), 0)
+    multi method query(::?CLASS:D: Str:D $name, T_A $type, ::Class:D $class, Scheduler:D :$scheduler = $*SCHEDULER --> Promise:D) {
+        my Promise:D $p := Promise.new;
+        my           $v := $p.vow;
+        nqp::asyncdnsquery(self,
+          nqp::decont_s($name),
+          nqp::unbox_i($type.value),
+          nqp::unbox_i($class.value),
+          $scheduler.queue(:hint-affinity),
+          -> Str:_ $error, @presentations {
+              $error
+                  ?? $v.break(X::AdHoc.new(payload => $error))
+                  !! $v.keep(@presentations)
+          },
+          AsyncTask);
+        $p
     }
-    multi method query(::?CLASS:D: Str:D $name, T_AAAA $type, ::Class:D $class --> Promise:D) {
-        start nqp::dnsquery(self, nqp::decont_s($name), nqp::unbox_i($type.value), nqp::unbox_i($class.value), 0)
+    multi method query(::?CLASS:D: Str:D $name, T_AAAA $type, ::Class:D $class, Scheduler:D :$scheduler = $*SCHEDULER --> Promise:D) {
+        my Promise:D $p := Promise.new;
+        my           $v := $p.vow;
+        nqp::asyncdnsquery(self,
+          nqp::decont_s($name),
+          nqp::unbox_i($type.value),
+          nqp::unbox_i($class.value),
+          $scheduler.queue(:hint-affinity),
+          -> Str:_ $error, @presentations {
+              $error
+                  ?? $v.break(X::AdHoc.new(payload => $error))
+                  !! $v.keep(@presentations)
+          },
+          AsyncTask);
+        $p
     }
 
     my subset AddressFamily   of ProtocolFamily:D where PF_UNSPEC | PF_INET | PF_INET6;
     my subset AddressType     of SocketType:D     where SOCK_ANY | SOCK_STREAM | SOCK_DGRAM | SOCK_RAW;
     my subset AddressProtocol of ProtocolType:D   where IPPROTO_ANY | IPPROTO_TCP | IPPROTO_UDP;
-
-    my class Queue is repr('ConcBlockingQueue') { }
 
     proto method resolve(::?CLASS:D: Str:D, Int:D --> Iterable:D) {*}
     multi method resolve(
@@ -95,8 +122,9 @@ my class IO::Resolver {
                         # Complete our IPv6 address(es) and push them to
                         # the queue:
                         for @ipv6-solutions -> ($type, $protocol) {
-                            my IO::Address::IPv6 \address .= new: $presentation, $port, :$type, :$protocol;
-                            nqp::push($queue, address);
+                            my IO::Address::IPv6:D $address :=
+                                IO::Address::IPv6.new: $presentation, $port, :$type, :$protocol;
+                            nqp::push($queue, $address);
                         }
                     }
                 }, start {
@@ -110,8 +138,9 @@ my class IO::Resolver {
                         # Complete our IPv4 address(es) and push them
                         # to the queue:
                         for @ipv4-solutions -> ($type, $protocol) {
-                            my IO::Address::IPv4 \address .= new: $presentation, $port, :$type, :$protocol;
-                            nqp::push($queue, address);
+                            my IO::Address::IPv4 $address :=
+                                IO::Address::IPv4.new: $presentation, $port, :$type, :$protocol;
+                            nqp::push($queue, $address);
                         }
                     }
                 };
