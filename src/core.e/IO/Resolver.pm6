@@ -12,10 +12,10 @@ enum IO::Resolver::Class (
 my class IO::Resolver {
     proto method query(::?CLASS:D: Str:D, ::Type:D, ::Class:D --> Promise:D) {*}
     multi method query(::?CLASS:D: Str:D $name, T_A $type, ::Class:D $class --> Promise:D) {
-        start nqp::dnsquery(self, nqp::decont_s($name), nqp::unbox_i($type.value), nqp::unbox_i($class.value))
+        start nqp::dnsquery(self, nqp::decont_s($name), nqp::unbox_i($type.value), nqp::unbox_i($class.value), 0)
     }
     multi method query(::?CLASS:D: Str:D $name, T_AAAA $type, ::Class:D $class --> Promise:D) {
-        start nqp::dnsquery(self, nqp::decont_s($name), nqp::unbox_i($type.value), nqp::unbox_i($class.value))
+        start nqp::dnsquery(self, nqp::decont_s($name), nqp::unbox_i($type.value), nqp::unbox_i($class.value), 0)
     }
 
     my subset AddressFamily   of ProtocolFamily:D where PF_UNSPEC | PF_INET | PF_INET6;
