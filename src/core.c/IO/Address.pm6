@@ -7,9 +7,7 @@ role IO::Address[ProtocolFamily:D $family] {
 
     method family(::?CLASS:D: --> ProtocolFamily:D) { $family }
 
-    multi method Str(::?CLASS:D: --> Str:D) {
-        nqp::p6box_s(nqp::addrtopres($!VM-address))
-    }
+    multi method Str(::?CLASS:D: --> Str:D) { nqp::addrtopres($!VM-address) }
 }
 
 class IO::Address::UNIX does IO::Address[PF_UNIX] {
@@ -74,9 +72,11 @@ class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
         $self
     }
 
-    method port(::?CLASS:D: --> Int:D) {
-        nqp::p6box_i(nqp::addrport($!VM-address))
-    }
+    method port(::?CLASS:D: --> Int:D) { nqp::addrport($!VM-address) }
+
+    method Int(::?CLASS:D: --> Int:D) { nqp::addrtonative($!VM-address) }
+
+    multi method Numeric(::?CLASS:D: --> Numeric:D) { self.Int }
 
     multi method gist(::?CLASS:D $self: --> Str:D) { "$self:$.port" }
 
@@ -91,6 +91,7 @@ class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
     }
 }
 
+# Refer to RFC4291 for information on what this class' methods are for.
 class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
     multi method new(
         ::SELF ::?CLASS:_:
@@ -110,9 +111,39 @@ class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
         $self
     }
 
-    method port(::?CLASS:D: --> Int:D)     { nqp::p6box_i(nqp::addrport($!VM-address)) }
-    method flowinfo(::?CLASS:D: --> Int:D) { nqp::p6box_i(nqp::addrflowinfo($!VM-address)) }
-    method scope-id(::?CLASS:D: --> Int:D) { nqp::p6box_i(nqp::addrscopeid($!VM-address)) }
+    method port(::?CLASS:D: --> Int:D)     { nqp::addrport($!VM-address) }
+    method flowinfo(::?CLASS:D: --> Int:D) { nqp::addrflowinfo($!VM-address) }
+    method scope-id(::?CLASS:D: --> Int:D) { nqp::addrscopeid($!VM-address) }
+
+    method Int(::?CLASS:D: --> Int:D) { nqp::addrtonative($!VM-address) }
+
+    multi method Numeric(::?CLASS:D: --> Numeric:D) { self.Int }
+
+    method is-unicast(::?CLASS:D: --> Bool:D)   { self.Int +> 120 != 0xFF }
+    method is-multicast(::?CLASS:D: --> Bool:D) { self.Int +> 120 == 0xFF }
+
+    subset Scope of Int:D where 0x0..0xF;
+    method scope(::?CLASS:D: --> Scope) {
+        my Int:D $native-address := self.Int;
+        my Int:D $leading-word   := $native-address +> 112;
+        # If the address is multicast, then the scope is whatever bits 13-16 are:
+        return $leading-word +& 0x000F if $leading-word +> 8 == 0xFF;
+        # If bits 1-10 are 1111111010 and bits 11-64 are all 0, then this is a
+        # unicast link-local address:
+        return 0x2 if $leading-word == 0xFE80 && $native-address +> 64 +& 0x0000FFFFFFFFFFFF == 0;
+        # If bits 1-10 are 1111111011, then this is a unicast site-local
+        # address:
+        return 0x4 if $leading-word == 0xFEC0;
+        # Otherwise, this is a unicast global address:
+        0xE
+    }
+
+    method is-interface-local(::?CLASS:D: --> Bool:D)    { self.scope == 0x1 }
+    method is-link-local(::?CLASS:D: --> Bool:D)         { self.scope == 0x2 }
+    method is-site-local(::?CLASS:D: --> Bool:D)         { self.scope == 0x4 }
+    method is-admin-local(::?CLASS:D: --> Bool:D)        { self.scope == 0x5 }
+    method is-organization-local(::?CLASS:D: --> Bool:D) { self.scope == 0x8 }
+    method is-global(::?CLASS:D: --> Bool:D)             { self.scope == 0xE }
 
     multi method gist(::?CLASS:D $self: --> Str:D) { "[$self]:$.port" }
 
