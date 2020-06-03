@@ -55,6 +55,8 @@ role IO::Address::IP {
     method port(::?CLASS:D: --> Int:D) { ... }
 }
 
+class IO::Address::IPv6 { ... }
+
 class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
     multi method new(
         ::SELF ::?CLASS:_:
@@ -78,6 +80,16 @@ class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
 
     multi method Numeric(::?CLASS:D: --> Numeric:D) { self.Int }
 
+    # Convert to an IPv4-mapped IPv6 address, as IPv4-compatible IPv6 addresses
+    # are deprecated.
+    proto method upgrade(::?CLASS:D: --> IO::Address::IPv6:D) {*}
+    multi method upgrade(::?CLASS:D $self: Bool:D :compatible($) = False) {
+        IO::Address::IPv6.new: "::FFFF:$self", $.port, :$.type, :$.protocol
+    }
+    multi method upgrade(::?CLASS:D $self: Bool:D :compatible($)! where ?*) {
+        IO::Address::IPv4.new: "::$self", $.port, :$.type, :$.protocol
+    }
+
     multi method gist(::?CLASS:D $self: --> Str:D) { "$self:$.port" }
 
     multi method raku(::?CLASS:D: --> Str:D) {
@@ -91,7 +103,7 @@ class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
     }
 }
 
-# Refer to RFC4291 for information on what this class' methods are for.
+# Refer to RFC4291 for information on what this class' methods do.
 class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
     multi method new(
         ::SELF ::?CLASS:_:
@@ -144,6 +156,32 @@ class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
     method is-admin-local(::?CLASS:D: --> Bool:D)        { self.scope == 0x5 }
     method is-organization-local(::?CLASS:D: --> Bool:D) { self.scope == 0x8 }
     method is-global(::?CLASS:D: --> Bool:D)             { self.scope == 0xE }
+
+    method is-ipv4-compatible(::?CLASS:D: --> Bool:D) {
+        my Int:D $native-address := self.Int;
+        $native-address +& 0xFFFFFFFF == $native-address
+    }
+
+    method is-ipv4-mapped(::?CLASS:D: --> Bool:D) {
+        my Int:D $native-address := self.Int;
+        my Int:D $tail           := $native-address +& 0xFFFFFFFFFFFF;
+        $tail == $native-address && $tail +> 32 == 0xFFFF
+    }
+
+    method downgrade(::?CLASS:D $self: --> IO::Address::IPv4:D) {
+        my Int:D $native-address := self.Int;
+        my Int:D $tail           := $native-address +& 0xFFFFFFFFFFFF;
+        my Int:D $maybe-ipv4     := $tail +& 0xFFFFFFFF;
+        # TODO: Typed exception.
+        X::AdHoc.new(payload => "IPv6 address '$self' cannot be downgraded to IPv4").throw
+            unless $maybe-ipv4 == $native-address || ($tail == $native-address && $tail +> 32 == 0xFFFF);
+
+        # TODO: nqp::addrfromipv4/nqp::addrfromipv6 should have _I and _s
+        # counterparts so this and .new can work better.
+        my Str:D $presentation := join '.', $maybe-ipv4 +& 0xFF000000 +> 24, $maybe-ipv4 +& 0x00FF0000 +> 16,
+                                            $maybe-ipv4 +& 0x0000FF00 +> 8, $maybe-ipv4 +& 0x000000FF;
+        IO::Address::IPv4.new: $presentation, $.port, :$.type, :$.protocol
+    }
 
     multi method gist(::?CLASS:D $self: --> Str:D) { "[$self]:$.port" }
 
