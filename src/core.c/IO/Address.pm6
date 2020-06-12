@@ -59,9 +59,13 @@ role IO::Address::IP {
 }
 
 class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
-    multi method new(::?CLASS:_: Str:D $ip, Int:D $port = 0 --> ::?CLASS:D) {
+    multi method new(::?CLASS:_: Str:D $presentation, Int:D $port = 0 --> ::?CLASS:D) {
         nqp::p6bindattrinvres(nqp::create(self), $?CLASS, '$!VM-address',
-            nqp::addrfromipv4(nqp::decont_s($ip), nqp::decont_i($port)))
+            nqp::addrfromipv4pres(nqp::decont_s($presentation), nqp::decont_i($port)))
+    }
+    multi method new(::?CLASS:_: blob8:D $raw where *.elems == 4, Int:D $port = 0 --> ::?CLASS:D) {
+        nqp::p6bindattrinvres(nqp::create(self), $?CLASS, '$!VM-address',
+            nqp::addrfromipv4native(nqp::decont($raw), nqp::decont_i($port)))
     }
 
     method raw(::?CLASS:D: --> Blob:D) { nqp::addrtonative($!VM-address, blob8.^pun) }
@@ -70,11 +74,25 @@ class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
     # Convert to an IPv4-mapped IPv6 address, as IPv4-compatible IPv6 addresses
     # are deprecated.
     proto method upgrade(::?CLASS:D: --> IO::Address::IPv6:D) {*}
-    multi method upgrade(::?CLASS:D $self: Bool:D :compatible($) = False) {
-        IO::Address::IPv6.new: "::FFFF:$self", $.port, :$.type, :$.protocol
-    }
     multi method upgrade(::?CLASS:D $self: Bool:D :compatible($)! where ?*) {
-        IO::Address::IPv6.new: "::$self", $.port, :$.type, :$.protocol
+        with $!info {
+            my SocketType:D   $type     = $!info.type;
+            my ProtocolType:D $protocol = $!info.protocol;
+            IO::Address::IPv6.new: "::$self", $.port, :$type, :$protocol
+        }
+        else {
+            IO::Address::IPv6.new: "::$self", $.port
+        }
+    }
+    multi method upgrade(::?CLASS:D $self: Bool:D :compatible($) = False) {
+        with $!info {
+            my SocketType:D   $type     = $!info.type;
+            my ProtocolType:D $protocol = $!info.protocol;
+            IO::Address::IPv6.new: "::FFFF:$self", $.port, :$type, :$protocol
+        }
+        else {
+            IO::Address::IPv6.new: "::FFFF:$self", $.port
+        }
     }
 
     multi method gist(::?CLASS:D $self: --> Str:D) { "$self:$.port" }
@@ -91,9 +109,27 @@ class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
 
 # Refer to RFC4291 for information on what this class' methods do.
 class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
-    multi method new(::?CLASS:_: Str:D $ip, Int:D $port = 0, UInt:D :$flowinfo = 0, UInt:D :$scope-id = 0 --> ::?CLASS:D) {
-        nqp::p6bindattrinvres(nqp::create(self), $?CLASS, '$!VM-address', nqp::addrfromipv6(
-          nqp::decont_s($ip), nqp::decont_i($port), nqp::decont_i($flowinfo), nqp::decont_i($scope-id)))
+    multi method new(
+        ::?CLASS:_:
+        Str:D   $presentation,
+        Int:D   $port          = 0,
+        UInt:D :$flowinfo      = 0,
+        UInt:D :$scope-id      = 0
+        --> ::?CLASS:D
+    ) {
+        nqp::p6bindattrinvres(nqp::create(self), $?CLASS, '$!VM-address', nqp::addrfromipv6pres(
+          nqp::decont_s($presentation), nqp::decont_i($port), nqp::decont_i($flowinfo), nqp::decont_i($scope-id)))
+    }
+    multi method new(
+        ::?CLASS:_:
+        blob8:D  $raw      where *.elems == 16,
+        Int:D    $port     = 0,
+        UInt:D  :$flowinfo = 0,
+        UInt:D  :$scope-id = 0
+        --> ::?CLASS:D
+    ) {
+        nqp::p6bindattrinvres(nqp::create(self), $?CLASS, '$!VM-address', nqp::addrfromipv6native(
+          nqp::decont($raw), nqp::decont_i($port), nqp::decont_i($flowinfo), nqp::decont_i($scope-id)))
     }
 
     method raw(::?CLASS:D: --> Blob:D)     { nqp::addrtonative($!VM-address, blob8.^pun) }
@@ -104,20 +140,20 @@ class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
     method is-unicast(::?CLASS:D: --> Bool:D)   { self.raw.[0] != 0xFF }
     method is-multicast(::?CLASS:D: --> Bool:D) { self.raw.[0] == 0xFF }
 
-    subset Scope of Int:D where 0x0..0xF;
+    my subset Scope of Int:D where 0x0..0xF;
     method scope(::?CLASS:D: --> Scope) {
-        my Blob:D $address := self.raw;
+        my blob8:D $raw-address := self.raw;
         # If the address is multicast, then the scope is whatever bits 13-16 are:
-        return $address[1] +& 0x0F if $address[0] == 0xFF;
+        return $raw-address[1] +& 0x0F if $raw-address[0] == 0xFF;
         # If bits 1-10 are 1111111010 and bits 11-64 are all 0, then this is a
         # unicast link-local address:
-        return 0x2 if $address[0] == 0xFE
-                   && $address[1] +& 0xC0 == 0x80
-                   && $address[2..7].reduce({ $^a +< 8 +| $^b }) == 0;
+        return 0x2 if $raw-address[0] == 0xFE
+                   && $raw-address[1] +& 0xC0 == 0x80
+                   && $raw-address[2..7].all == 0;
         # If bits 1-10 are 1111111011, then this is a unicast site-local
         # address:
-        return 0x4 if $address[0] == 0xFE
-                   && $address[1] +& 0xC0 == 0xC0;
+        return 0x4 if $raw-address[0] == 0xFE
+                   && $raw-address[1] +& 0xC0 == 0xC0;
         # Otherwise, this is a unicast global address:
         0xE
     }
@@ -130,28 +166,27 @@ class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
     method is-global(::?CLASS:D: --> Bool:D)             { self.scope == 0xE }
 
     method is-ipv4-compatible(::?CLASS:D: --> Bool:D) {
-        my Int:D $native-address := self.raw.reduce({ $^a +< 8 +| $^b });
-        $native-address +& 0xFFFFFFFF == $native-address
+        my blob8:D $raw-address := self.raw;
+        so $raw-address[0..11].all == 0
     }
-
     method is-ipv4-mapped(::?CLASS:D: --> Bool:D) {
-        my Int:D $native-address := self.raw.reduce({ $^a +< 8 +| $^b });
-        my Int:D $tail           := $native-address +& 0xFFFFFFFFFFFF;
-        $tail == $native-address && $tail +> 32 == 0xFFFF
+        my blob8:D $raw-address := self.raw;
+        so $raw-address[0..9].all == 0 && $raw-address[10..11].all == 0xFF
     }
 
     method downgrade(::?CLASS:D $self: --> IO::Address::IPv4:D) {
-        my Int:D $native-address := self.raw.reduce({ $^a +< 8 +| $^b });
-        my Int:D $tail           := $native-address +& 0xFFFFFFFFFFFF;
-        my Int:D $maybe-ipv4     := $tail +& 0xFFFFFFFF;
+        my blob8:D $raw-address := self.raw;
         # TODO: Typed exception.
         X::AdHoc.new(payload => "IPv6 address '$self' cannot be downgraded to IPv4").throw
-            unless $maybe-ipv4 == $native-address || ($tail == $native-address && $tail +> 32 == 0xFFFF);
-
-        # TODO: Similar ops to nqp::addrfromipv4/nqp::addrfromipv6 for blobs.
-        my Str:D $presentation := join '.', $maybe-ipv4 +& 0xFF000000 +> 24, $maybe-ipv4 +& 0x00FF0000 +> 16,
-                                            $maybe-ipv4 +& 0x0000FF00 +> 8, $maybe-ipv4 +& 0x000000FF;
-        IO::Address::IPv4.new: $presentation, $.port, :$.type, :$.protocol
+            unless $raw-address[0..9].all == 0 && $raw-address[10..11].all == 0x00 | 0xFF;
+        with $!info {
+            my SocketType:D   $type     = $!info.type;
+            my ProtocolType:D $protocol = $!info.protocol;
+            IO::Address::IPv4.new: $raw-address.subbuf(12, 4), $.port, :$type, :$protocol
+        }
+        else {
+            IO::Address::IPv4.new: $raw-address.subbuf(12, 4), $.port
+        }
     }
 
     multi method gist(::?CLASS:D $self: --> Str:D) { "[$self]:$.port" }
