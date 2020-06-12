@@ -13,14 +13,21 @@ my class IO::Resolver {
     my class Queue     is repr('ConcBlockingQueue') { }
     my class AsyncTask is repr('AsyncTask')         { }
 
-    proto method query(::?CLASS:D: Str:D, ::Type:D, ::Class:D --> Promise:D) {*}
-    multi method query(::?CLASS:D: Str:D $name, T_A $type, ::Class:D $class, Scheduler:D :$scheduler = $*SCHEDULER --> Promise:D) {
+    proto method query(::?CLASS:D: Str:D, ::Class:D, ::Type:D --> Promise:D) {*}
+    multi method query(
+        ::?CLASS:D:
+        Str:D        $name,
+        ::Class:D    $class,
+        T_A          $type;;
+        Scheduler:D :$scheduler = $*SCHEDULER
+        --> Promise:D
+    ) {
         my Promise:D $p := Promise.new;
         my           $v := $p.vow;
         nqp::asyncdnsquery(self,
           nqp::decont_s($name),
-          nqp::unbox_i($type.value),
           nqp::unbox_i($class.value),
+          nqp::unbox_i($type.value),
           $scheduler.queue(:hint-affinity),
           -> Str:_ $error, @presentations {
               $error
@@ -30,13 +37,20 @@ my class IO::Resolver {
           AsyncTask);
         $p
     }
-    multi method query(::?CLASS:D: Str:D $name, T_AAAA $type, ::Class:D $class, Scheduler:D :$scheduler = $*SCHEDULER --> Promise:D) {
+    multi method query(
+        ::?CLASS:D:
+        Str:D $name,
+        ::Class:D    $class,
+        T_AAAA       $type;;
+        Scheduler:D :$scheduler = $*SCHEDULER
+        --> Promise:D
+    ) {
         my Promise:D $p := Promise.new;
         my           $v := $p.vow;
         nqp::asyncdnsquery(self,
           nqp::decont_s($name),
-          nqp::unbox_i($type.value),
           nqp::unbox_i($class.value),
+          nqp::unbox_i($type.value),
           $scheduler.queue(:hint-affinity),
           -> Str:_ $error, @presentations {
               $error
@@ -62,7 +76,7 @@ my class IO::Resolver {
     ) {
         gather {
             my (@ipv4-solutions, @) := take-a-hint $family, $type, $protocol;
-            for await self.query: $host, T_A, C_IN -> Str:D $presentation {
+            for await self.query: $host, C_IN, T_A -> Str:D $presentation {
                 for @ipv4-solutions -> ($type, $protocol) {
                     take IO::Address::IPv4.new: $presentation, $port, :$type, :$protocol;
                 }
@@ -79,7 +93,7 @@ my class IO::Resolver {
     ) {
         gather {
             my (@, @ipv6-solutions) := take-a-hint $family, $type, $protocol;
-            for await self.query: $host, T_AAAA, C_IN -> Str:D $presentation {
+            for await self.query: $host, C_IN, T_AAAA -> Str:D $presentation {
                 for @ipv6-solutions -> ($type, $protocol) {
                     take IO::Address::IPv6.new: $presentation, $port, :$type, :$protocol;
                 }
@@ -115,7 +129,7 @@ my class IO::Resolver {
                 # Begin by making an AAAA query followed by an A query,
                 # in parallel, as closely together as we can:
                 await start {
-                    for await self.query: $host, T_AAAA, C_IN -> Str:D $presentation {
+                    for await self.query: $host, C_IN, T_AAAA -> Str:D $presentation {
                         # If an IPv6 address was the first address
                         # received, then go ahead with connecting now:
                         FIRST try-to-proceed;
@@ -128,7 +142,7 @@ my class IO::Resolver {
                         }
                     }
                 }, start {
-                    for await self.query: $host, T_A, C_IN -> Str:D $presentation {
+                    for await self.query: $host, C_IN, T_A -> Str:D $presentation {
                         # If the first address we wind up receiving is an
                         # IPv4 one, then await the recommended resolution
                         # delay of 50ms before proceeding to connect with
