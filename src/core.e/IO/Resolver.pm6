@@ -28,7 +28,7 @@ my class IO::Resolver {
           nqp::decont_s($name),
           nqp::unbox_i($class.value),
           nqp::unbox_i($type.value),
-          $scheduler.queue(:hint-affinity),
+          $scheduler.queue,
           -> Str:_ $error, @presentations {
               $error
                   ?? $v.break(X::AdHoc.new(payload => $error))
@@ -51,7 +51,7 @@ my class IO::Resolver {
           nqp::decont_s($name),
           nqp::unbox_i($class.value),
           nqp::unbox_i($type.value),
-          $scheduler.queue(:hint-affinity),
+          $scheduler.queue,
           -> Str:_ $error, @presentations {
               $error
                   ?? $v.break(X::AdHoc.new(payload => $error))
