@@ -23,8 +23,7 @@ my class IO::Resolver {
             };
 
             my $address := nqp::p6bindattrinvres(nqp::create(A), A, '$!VM-address', $VM-address);
-            nqp::bindattr($address, A, '$!info',
-              IO::Address::Info.new: ProtocolFamily($family), SocketType($type), ProtocolType($type));
+            nqp::bindattr($address, A, '$!info', IO::Address::Info.new: SocketType($type), ProtocolType($type));
             take $address;
         }
     }

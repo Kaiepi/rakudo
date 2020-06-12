@@ -2,15 +2,13 @@ role  IO::Address       { ... }
 class IO::Address::IPv6 { ... }
 
 class IO::Address::Info {
-    has ProtocolFamily:D $.family   is required;
-    has SocketType:D     $.type     is required;
-    has ProtocolType:D   $.protocol is required;
+    has SocketType:D   $.type     is required;
+    has ProtocolType:D $.protocol is required;
 
-    method new(::?CLASS:_: ProtocolFamily:D $family, SocketType:D $type, ProtocolType:D $protocol --> ::?CLASS:D) {
-        nqp::create(self)!SET-SELF($family, $type, $protocol)
+    method new(::?CLASS:_: SocketType:D $type, ProtocolType:D $protocol --> ::?CLASS:D) {
+        nqp::create(self)!SET-SELF($type, $protocol)
     }
-    method !SET-SELF(::?CLASS:D: $family, $type, $protocol) {
-        $!family   := $family;
+    method !SET-SELF(::?CLASS:D: $type, $protocol) {
         $!type     := $type;
         $!protocol := $protocol;
         self
@@ -26,9 +24,13 @@ role IO::Address[ProtocolFamily:D $family] {
     }
     method !SET-SELF(::?ROLE:D: $type, $protocol) {
         return self unless $type.DEFINITE && $protocol.DEFINITE;
-        nqp::p6bindattrinvres(self, $?CLASS, '$!info',
-           IO::Address::Info.new: $family, $type, $protocol)
+        nqp::p6bindattrinvres(self, $?CLASS, '$!info', IO::Address::Info.new: $type, $protocol)
     }
+
+    method family(::?CLASS:_: --> ProtocolFamily:D) { $family }
+    method type(::?CLASS:D: --> SocketType:_)       { self.has-info ?? $!info.type !! Nil }
+    method protocol(::?CLASS:D: --> ProtocolType:_) { self.has-info ?? $!info.protocol !! Nil }
+    method has-info(::?CLASS:D: --> Bool:D)         { $!info.DEFINITE }
 
     multi method Str(::?CLASS:D: --> Str:D) { nqp::addrtopres($!VM-address) }
 }
@@ -41,6 +43,9 @@ class IO::Address::UNIX does IO::Address[PF_UNIX] {
     multi method new(::?CLASS:_: Str:D $path --> ::?CLASS:D) {
         nqp::p6bindattrinvres(nqp::create(self), $?CLASS, '$!VM-address',
           nqp::addrfrompath(nqp::decont_s($path)));
+    }
+    multi method new(::?CLASS:D: ::?CLASS:D $address) {
+        $address.clone
     }
 
     multi method gist(::?CLASS:D: --> Str:D) { self.Str }
@@ -61,38 +66,28 @@ role IO::Address::IP {
 class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
     multi method new(::?CLASS:_: Str:D $presentation, Int:D $port = 0 --> ::?CLASS:D) {
         nqp::p6bindattrinvres(nqp::create(self), $?CLASS, '$!VM-address',
-            nqp::addrfromipv4pres(nqp::decont_s($presentation), nqp::decont_i($port)))
+          nqp::addrfromipv4pres(nqp::decont_s($presentation), nqp::decont_i($port)))
     }
     multi method new(::?CLASS:_: blob8:D $raw where *.elems == 4, Int:D $port = 0 --> ::?CLASS:D) {
         nqp::p6bindattrinvres(nqp::create(self), $?CLASS, '$!VM-address',
-            nqp::addrfromipv4native(nqp::decont($raw), nqp::decont_i($port)))
+          nqp::addrfromipv4native(nqp::decont($raw), nqp::decont_i($port)))
+    }
+    multi method new(::?CLASS:D: Int:D $port = 0 --> ::?CLASS:D) {
+        nqp::p6bindattrinvres(nqp::create(self), $?CLASS, '$!VM-address',
+          nqp::addrfromipv4native(self.raw, nqp::decont_i($port)))
     }
 
-    method raw(::?CLASS:D: --> Blob:D) { nqp::addrtonative($!VM-address, blob8.^pun) }
-    method port(::?CLASS:D: --> Int:D) { nqp::addrport($!VM-address) }
+    method raw(::?CLASS:D: --> blob8:D) { nqp::addrtonative($!VM-address, blob8.^pun) }
+    method port(::?CLASS:D: --> Int:D)  { nqp::addrport($!VM-address) }
 
     # Convert to an IPv4-mapped IPv6 address, as IPv4-compatible IPv6 addresses
     # are deprecated.
     proto method upgrade(::?CLASS:D: --> IO::Address::IPv6:D) {*}
     multi method upgrade(::?CLASS:D $self: Bool:D :compatible($)! where ?*) {
-        with $!info {
-            my SocketType:D   $type     = $!info.type;
-            my ProtocolType:D $protocol = $!info.protocol;
-            IO::Address::IPv6.new: "::$self", $.port, :$type, :$protocol
-        }
-        else {
-            IO::Address::IPv6.new: "::$self", $.port
-        }
+        IO::Address::IPv6.new: "::$self", $.port, :$.type, :$.protocol
     }
     multi method upgrade(::?CLASS:D $self: Bool:D :compatible($) = False) {
-        with $!info {
-            my SocketType:D   $type     = $!info.type;
-            my ProtocolType:D $protocol = $!info.protocol;
-            IO::Address::IPv6.new: "::FFFF:$self", $.port, :$type, :$protocol
-        }
-        else {
-            IO::Address::IPv6.new: "::FFFF:$self", $.port
-        }
+        IO::Address::IPv6.new: "::FFFF:$self", $.port, :$.type, :$.protocol
     }
 
     multi method gist(::?CLASS:D $self: --> Str:D) { "$self:$.port" }
@@ -131,8 +126,18 @@ class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
         nqp::p6bindattrinvres(nqp::create(self), $?CLASS, '$!VM-address', nqp::addrfromipv6native(
           nqp::decont($raw), nqp::decont_i($port), nqp::decont_i($flowinfo), nqp::decont_i($scope-id)))
     }
+    multi method new(
+        ::?CLASS:D:
+        Int:D   $port     = 0,
+        UInt:D :$flowinfo = 0,
+        UInt:D :$scope-id = 0
+        --> ::?CLASS:D
+    ) {
+        nqp::p6bindattrinvres(nqp::create(self), $?CLASS, '$!VM-address', nqp::addrfromipv6native(
+          self.raw, nqp::decont_i($port), nqp::decont_i($flowinfo), nqp::decont_i($scope-id)))
+    }
 
-    method raw(::?CLASS:D: --> Blob:D)     { nqp::addrtonative($!VM-address, blob8.^pun) }
+    method raw(::?CLASS:D: --> blob8:D)    { nqp::addrtonative($!VM-address, blob8.^pun) }
     method port(::?CLASS:D: --> Int:D)     { nqp::addrport($!VM-address) }
     method flowinfo(::?CLASS:D: --> Int:D) { nqp::addrflowinfo($!VM-address) }
     method scope-id(::?CLASS:D: --> Int:D) { nqp::addrscopeid($!VM-address) }
@@ -179,14 +184,7 @@ class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
         # TODO: Typed exception.
         X::AdHoc.new(payload => "IPv6 address '$self' cannot be downgraded to IPv4").throw
             unless $raw-address[0..9].all == 0 && $raw-address[10..11].all == 0x00 | 0xFF;
-        with $!info {
-            my SocketType:D   $type     = $!info.type;
-            my ProtocolType:D $protocol = $!info.protocol;
-            IO::Address::IPv4.new: $raw-address.subbuf(12, 4), $.port, :$type, :$protocol
-        }
-        else {
-            IO::Address::IPv4.new: $raw-address.subbuf(12, 4), $.port
-        }
+        IO::Address::IPv4.new: $raw-address.subbuf(12, 4), $.port, :$.type, :$.protocol
     }
 
     multi method gist(::?CLASS:D $self: --> Str:D) { "[$self]:$.port" }
