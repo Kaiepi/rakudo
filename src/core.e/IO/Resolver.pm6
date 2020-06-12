@@ -109,9 +109,8 @@ my class IO::Resolver {
         --> Iterable:D
     ) {
         # Implementation of RFC8305 (Happy Eyeballs v2):
+        my (@ipv4-solutions, @ipv6-solutions) := take-a-hint $family, $type, $protocol;
         gather {
-            my (@ipv4-solutions, @ipv6-solutions) := take-a-hint $family, $type, $protocol;
-
             my Queue:D                   $queue     := nqp::create(Queue);
             my Bool:D                    $init      := False;
             my Lock:D                    $init_lock := Lock.new;
@@ -133,13 +132,9 @@ my class IO::Resolver {
                         # If an IPv6 address was the first address
                         # received, then go ahead with connecting now:
                         FIRST try-to-proceed;
-                        # Complete our IPv6 address(es) and push them to
-                        # the queue:
-                        for @ipv6-solutions -> ($type, $protocol) {
-                            my IO::Address::IPv6:D $address :=
-                                IO::Address::IPv6.new: $presentation, $port, :$type, :$protocol;
-                            nqp::push($queue, $address);
-                        }
+                        # Complete our IPv6 address and push it to the queue:
+                        my IO::Address::IPv6:D $address := IO::Address::IPv6.new: $presentation, $port;
+                        nqp::push($queue, $address);
                     }
                 }, start {
                     for await self.query: $host, C_IN, T_A -> Str:D $presentation {
@@ -149,13 +144,9 @@ my class IO::Resolver {
                         # any addresses received during that point, so
                         # long as they're all IPv4 addresses:
                         FIRST $*SCHEDULER.cue: &try-to-proceed, in => 0.050 unless $init;
-                        # Complete our IPv4 address(es) and push them
-                        # to the queue:
-                        for @ipv4-solutions -> ($type, $protocol) {
-                            my IO::Address::IPv4 $address :=
-                                IO::Address::IPv4.new: $presentation, $port, :$type, :$protocol;
-                            nqp::push($queue, $address);
-                        }
+                        # Complete our IPv4 address and push it t∘ the queue:
+                        my IO::Address::IPv4 $address := IO::Address::IPv4.new: $presentation, $port;
+                        nqp::push($queue, $address);
                     }
                 };
                 LEAVE {
@@ -171,7 +162,21 @@ my class IO::Resolver {
             until (my IO::Address:_ $address := nqp::shift($queue)) =:= IO::Address {
                 take $address;
             }
-        }
+        }.map({
+            when IO::Address::IPv4 {
+                slip do for @ipv4-solutions -> ($type, $protocol) {
+                    .new: $port, :$type, :$protocol
+                }
+            }
+            when IO::Address::IPv6 {
+                slip do for @ipv6-solutions -> ($type, $protocol) {
+                    .new: $port, :$type, :$protocol
+                }
+            }
+            default { # Should never happen.
+                slip
+            }
+        })
     }
 
     # Helper routine for getting any extra address information not included in
