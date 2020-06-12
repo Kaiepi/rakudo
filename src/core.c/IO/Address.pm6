@@ -1,51 +1,53 @@
+role  IO::Address       { ... }
+class IO::Address::IPv6 { ... }
+
+class IO::Address::Info {
+    has ProtocolFamily:D $.family   is required;
+    has SocketType:D     $.type     is required;
+    has ProtocolType:D   $.protocol is required;
+
+    method new(::?CLASS:_: ProtocolFamily:D $family, SocketType:D $type, ProtocolType:D $protocol --> ::?CLASS:D) {
+        nqp::create(self)!SET-SELF($family, $type, $protocol)
+    }
+    method !SET-SELF(::?CLASS:D: $family, $type, $protocol) {
+        $!family   := $family;
+        $!type     := $type;
+        $!protocol := $protocol;
+        self
+    }
+}
+
 role IO::Address[ProtocolFamily:D $family] {
-    has SocketType:D   $.type       is required;
-    has ProtocolType:D $.protocol   is required;
-    has Mu             $!VM-address is required;
+    has Mu                  $!VM-address is required;
+    has IO::Address::Info:_ $.info;
 
-    proto method new(::?CLASS:_: | --> ::?CLASS:D) {*}
-
-    method family(::?CLASS:D: --> ProtocolFamily:D) { $family }
+    proto method new(::?ROLE:_: +, SocketType:_ :$type, ProtocolType:_ :$protocol --> ::?ROLE:D) {
+        {*}!SET-SELF($type, $protocol)
+    }
+    method !SET-SELF(::?ROLE:D: $type, $protocol) {
+        return self unless $type.DEFINITE && $protocol.DEFINITE;
+        nqp::p6bindattrinvres(self, $?CLASS, '$!info',
+           IO::Address::Info.new: $family, $type, $protocol)
+    }
 
     multi method Str(::?CLASS:D: --> Str:D) { nqp::addrtopres($!VM-address) }
 }
 
 class IO::Address::UNIX does IO::Address[PF_UNIX] {
-    multi method new(
-        ::SELF ::?CLASS:_:
-        IO::Path:D      $path,
-        SocketType:D   :$type     = SOCK_ANY,
-        ProtocolType:D :$protocol = IPPROTO_ANY
-        --> ::?CLASS:D
-    ) {
-        my ::?CLASS:D $self :=
-            nqp::p6bindattrinvres(nqp::create(self), SELF, '$!VM-address',
-                nqp::addrfrompath(nqp::unbox_s(~$path)));
-        nqp::bindattr($self, SELF, '$!type', nqp::decont($type));
-        nqp::bindattr($self, SELF, '$!protocol', nqp::decont($protocol));
-        $self
+    multi method new(::?CLASS:_: IO::Path:D $path --> ::?CLASS:D) {
+        nqp::p6bindattrinvres(nqp::create(self), $?CLASS, '$!VM-address',
+          nqp::addrfrompath(nqp::unbox_s($path.Str)))
     }
-    multi method new(
-        ::SELF ::?CLASS:_:
-        Str:D           $path,
-        SocketType:D   :$type     = SOCK_ANY,
-        ProtocolType:D :$protocol = IPPROTO_ANY
-        --> ::?CLASS:D
-    ) {
-        my ::?CLASS:D $self :=
-            nqp::p6bindattrinvres(nqp::create(self), SELF, '$!VM-address',
-                nqp::addrfrompath(nqp::decont_s($path)));
-        nqp::bindattr($self, SELF, '$!type', nqp::decont($type));
-        nqp::bindattr($self, SELF, '$!protocol', nqp::decont($protocol));
-        $self
+    multi method new(::?CLASS:_: Str:D $path --> ::?CLASS:D) {
+        nqp::p6bindattrinvres(nqp::create(self), $?CLASS, '$!VM-address',
+          nqp::addrfrompath(nqp::decont_s($path)));
     }
 
     multi method gist(::?CLASS:D: --> Str:D) { self.Str }
 
     multi method raku(::?CLASS:D: --> Str:D) {
         my Str:D $raku = "IO::Address::UNIX.new($.Str.raku()";
-        $raku ~= ", type => $!type.raku()" unless $!type ~~ SOCK_STREAM;
-        $raku ~= ", protocol => $!protocol.raku()" unless $!protocol ~~ IPPROTO_TCP;
+        $raku ~= ", type => $!info.type.raku(), protocol => $!info.protocol.raku()" with $!info;
         $raku ~= ')';
         $raku
     }
@@ -53,32 +55,21 @@ class IO::Address::UNIX does IO::Address[PF_UNIX] {
 
 role IO::Address::IP {
     method port(::?CLASS:D: --> Int:D) { ... }
+
+    method Int(::?CLASS:D: --> Int:D)  { ... }
+
+    multi method Numeric(::?CLASS:D: --> Numeric:D) { self.Int }
 }
 
-class IO::Address::IPv6 { ... }
-
 class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
-    multi method new(
-        ::SELF ::?CLASS:_:
-        Str:D           $ip,
-        Int:D           $port     = 0,
-        SocketType:D   :$type     = SOCK_ANY,
-        ProtocolType:D :$protocol = IPPROTO_ANY
-        --> ::?CLASS:D
-    ) {
-        my ::?CLASS:D $self :=
-            nqp::p6bindattrinvres(nqp::create(self), SELF, '$!VM-address',
-                nqp::addrfromipv4(nqp::decont_s($ip), nqp::decont_i($port)));
-        nqp::bindattr($self, SELF, '$!type', nqp::decont($type));
-        nqp::bindattr($self, SELF, '$!protocol', nqp::decont($protocol));
-        $self
+    multi method new(::?CLASS:_: Str:D $ip, Int:D $port = 0 --> ::?CLASS:D) {
+        nqp::p6bindattrinvres(nqp::create(self), $?CLASS, '$!VM-address',
+            nqp::addrfromipv4(nqp::decont_s($ip), nqp::decont_i($port)))
     }
 
     method port(::?CLASS:D: --> Int:D) { nqp::addrport($!VM-address) }
 
     method Int(::?CLASS:D: --> Int:D) { nqp::addrtonative($!VM-address) }
-
-    multi method Numeric(::?CLASS:D: --> Numeric:D) { self.Int }
 
     # Convert to an IPv4-mapped IPv6 address, as IPv4-compatible IPv6 addresses
     # are deprecated.
@@ -96,8 +87,7 @@ class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
         my Int:D $port = $.port;
         my Str:D $raku = "IO::Address::IPv4.new($.Str.raku()";
         $raku ~= ", $port.raku()" unless $port == 0;
-        $raku ~= ", type => $!type.raku()" unless $!type ~~ SOCK_STREAM;
-        $raku ~= ", protocol => $!protocol.raku()" unless $!protocol ~~ IPPROTO_TCP;
+        $raku ~= ", type => $!info.type.raku(), protocol => $!info.protocol.raku()" with $!info;
         $raku ~= ')';
         $raku
     }
@@ -105,22 +95,9 @@ class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
 
 # Refer to RFC4291 for information on what this class' methods do.
 class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
-    multi method new(
-        ::SELF ::?CLASS:_:
-        Str:D           $ip,
-        Int:D           $port     = 0,
-        UInt:D         :$flowinfo = 0,
-        UInt:D         :$scope-id = 0,
-        SocketType:D   :$type     = SOCK_ANY,
-        ProtocolType:D :$protocol = IPPROTO_ANY
-        --> ::?CLASS:D
-    ) {
-        my ::?CLASS:D $self :=
-            nqp::p6bindattrinvres(nqp::create(self), SELF, '$!VM-address',
-                nqp::addrfromipv6(nqp::decont_s($ip), nqp::decont_i($port), nqp::decont_i($flowinfo), nqp::decont_i($scope-id)));
-        nqp::bindattr($self, SELF, '$!type', nqp::decont($type));
-        nqp::bindattr($self, SELF, '$!protocol', nqp::decont($protocol));
-        $self
+    multi method new(::?CLASS:_: Str:D $ip, Int:D $port = 0, UInt:D :$flowinfo = 0, UInt:D :$scope-id = 0 --> ::?CLASS:D) {
+        nqp::p6bindattrinvres(nqp::create(self), $?CLASS, '$!VM-address', nqp::addrfromipv6(
+          nqp::decont_s($ip), nqp::decont_i($port), nqp::decont_i($flowinfo), nqp::decont_i($scope-id)))
     }
 
     method port(::?CLASS:D: --> Int:D)     { nqp::addrport($!VM-address) }
@@ -128,8 +105,6 @@ class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
     method scope-id(::?CLASS:D: --> Int:D) { nqp::addrscopeid($!VM-address) }
 
     method Int(::?CLASS:D: --> Int:D) { nqp::addrtonative($!VM-address) }
-
-    multi method Numeric(::?CLASS:D: --> Numeric:D) { self.Int }
 
     method is-unicast(::?CLASS:D: --> Bool:D)   { self.Int +> 120 != 0xFF }
     method is-multicast(::?CLASS:D: --> Bool:D) { self.Int +> 120 == 0xFF }
@@ -193,8 +168,7 @@ class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
         $raku ~= ", $port.raku()" unless $port == 0;
         $raku ~= ", flowinfo => $flowinfo.raku()" unless $flowinfo == 0;
         $raku ~= ", scope-id => $scope-id.raku()" unless $scope-id == 0;
-        $raku ~= ", type => $!type.raku()" unless $!type ~~ SOCK_STREAM;
-        $raku ~= ", protocol => $!protocol.raku()" unless $!protocol ~~ IPPROTO_TCP;
+        $raku ~= ", type => $!info.type.raku(), protocol => $!info.protocol.raku()" with $!info;
         $raku ~= ')';
         $raku
     }
