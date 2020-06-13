@@ -29,10 +29,16 @@ my class IO::Resolver {
           nqp::unbox_i($class.value),
           nqp::unbox_i($type.value),
           $scheduler.queue,
-          -> Str:_ $error, @presentations {
-              $error
-                  ?? $v.break(X::AdHoc.new(payload => $error))
-                  !! $v.keep(@presentations)
+          -> Str:_ $error, @VM-addresses {
+              with $error {
+                  # TODO: Typed exception.
+                  $v.break: X::AdHoc.new: payload => $error;
+              }
+              else {
+                  $v.keep: @VM-addresses.map({
+                      nqp::p6bindattrinvres(nqp::create(IO::Address::IPv4), IO::Address::IPv4, '$!VM-address', $_)
+                  });
+              }
           },
           AsyncTask);
         $p
@@ -52,10 +58,16 @@ my class IO::Resolver {
           nqp::unbox_i($class.value),
           nqp::unbox_i($type.value),
           $scheduler.queue,
-          -> Str:_ $error, @presentations {
-              $error
-                  ?? $v.break(X::AdHoc.new(payload => $error))
-                  !! $v.keep(@presentations)
+          -> Str:_ $error, @VM-addresses {
+              with $error {
+                  # TODO: Typed exception.
+                  $v.break: X::AdHoc.new: payload => $error;
+              }
+              else {
+                  $v.keep: @VM-addresses.map({
+                      nqp::p6bindattrinvres(nqp::create(IO::Address::IPv6), IO::Address::IPv6, '$!VM-address', $_)
+                  });
+              }
           },
           AsyncTask);
         $p
@@ -76,9 +88,9 @@ my class IO::Resolver {
     ) {
         gather {
             my (@ipv4-solutions, @) := take-a-hint $family, $type, $protocol;
-            for await self.query: $host, C_IN, T_A -> Str:D $presentation {
+            for await self.query: $host, C_IN, T_A -> IO::Address::IPv4:D $address {
                 for @ipv4-solutions -> ($type, $protocol) {
-                    take IO::Address::IPv4.new: $presentation, $port, :$type, :$protocol;
+                    take $address.new: $port, :$type, :$protocol;
                 }
             }
         }
@@ -93,9 +105,9 @@ my class IO::Resolver {
     ) {
         gather {
             my (@, @ipv6-solutions) := take-a-hint $family, $type, $protocol;
-            for await self.query: $host, C_IN, T_AAAA -> Str:D $presentation {
+            for await self.query: $host, C_IN, T_AAAA -> IO::Address::IPv6:D $address {
                 for @ipv6-solutions -> ($type, $protocol) {
-                    take IO::Address::IPv6.new: $presentation, $port, :$type, :$protocol;
+                    take $address.new: $port, :$type, :$protocol;
                 }
             }
         }
@@ -127,27 +139,21 @@ my class IO::Resolver {
             $*SCHEDULER.cue({
                 # Begin by making an AAAA query followed by an A query,
                 # in parallel, as closely together as we can:
-                await start {
-                    for await self.query: $host, C_IN, T_AAAA -> Str:D $presentation {
-                        # If an IPv6 address was the first address
-                        # received, then go ahead with connecting now:
-                        FIRST try-to-proceed;
-                        # Complete our IPv6 address and push it to the queue:
-                        my IO::Address::IPv6:D $address := IO::Address::IPv6.new: $presentation, $port;
-                        nqp::push($queue, $address);
-                    }
-                }, start {
-                    for await self.query: $host, C_IN, T_A -> Str:D $presentation {
-                        # If the first address we wind up receiving is an
-                        # IPv4 one, then await the recommended resolution
-                        # delay of 50ms before proceeding to connect with
-                        # any addresses received during that point, so
-                        # long as they're all IPv4 addresses:
-                        FIRST $*SCHEDULER.cue: &try-to-proceed, in => 0.050 unless $init;
-                        # Complete our IPv4 address and push it t∘ the queue:
-                        my IO::Address::IPv4 $address := IO::Address::IPv4.new: $presentation, $port;
-                        nqp::push($queue, $address);
-                    }
+                await start for await self.query: $host, C_IN, T_AAAA -> IO::Address::IPv6:D $address {
+                    # If an IPv6 address was the first address
+                    # received, then go ahead with connecting now:
+                    FIRST try-to-proceed;
+                    # Complete our IPv6 address and push it to the queue:
+                    nqp::push($queue, $address);
+                }, start for await self.query: $host, C_IN, T_A -> IO::Address::IPv4 $address {
+                    # If the first address we wind up receiving is an
+                    # IPv4 one, then await the recommended resolution
+                    # delay of 50ms before proceeding to connect with
+                    # any addresses received during that point, so
+                    # long as they're all IPv4 addresses:
+                    FIRST $*SCHEDULER.cue: &try-to-proceed, in => 0.050 unless $init;
+                    # Complete our IPv4 address and push it t∘ the queue:
+                    nqp::push($queue, $address);
                 };
                 LEAVE {
                     # Mark the end of the queue:
