@@ -229,17 +229,22 @@ Rakudo::Internals.REGISTER-DYNAMIC: '$*RESOLVER', {
 }, '6.e';
 
 Rakudo::Internals.REGISTER-DYNAMIC: '&*CONNECT', {
-    PROCESS::<&CONNECT> := sub CONNECT(Iterable:D $addresses is raw, &callback --> Nil) {
-        my Exception:_ $error;
+    PROCESS::<&CONNECT> := sub CONNECT(Iterable:D $addresses is raw, &callback --> Mu) {
+        my Mu          $result := Nil;
+        my Exception:_ $error  := Exception;
         for $addresses -> IO::Address:D $address {
-            callback $address;
-            CATCH { default {
-                $error := $_;
-                next;
-            } }
-            $error := Exception;
-            last;
+            # Connection attempts are made one at a time, separated by at least
+            # 10ms, but never taking any longer than 250ms (a naive connection
+            # attempt delay):
+            await Promise.allof: Promise.anyof(start {
+                $result := try callback $address;
+                $error  := $!;
+            }, Promise.in(0.250)), Promise.in(0.010);
+            # If we succeeded to connect with an address, ignore the remaining
+            # addresses:
+            last without $error;
         }
         $error.rethrow with $error;
+        $result
     };
 }, '6.e';
