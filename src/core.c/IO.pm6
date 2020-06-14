@@ -10,11 +10,11 @@ enum SeekType (
 );
 
 enum ProtocolFamily (
-  :PF_UNSPEC(nqp::p6box_i(nqp::const::SOCKET_FAMILY_UNSPEC)),
-  :PF_INET(nqp::p6box_i(nqp::const::SOCKET_FAMILY_INET)),
-  :PF_INET6(nqp::p6box_i(nqp::const::SOCKET_FAMILY_INET6)),
-  :PF_LOCAL(nqp::p6box_i(nqp::const::SOCKET_FAMILY_UNIX)),
-  :PF_UNIX(nqp::p6box_i(nqp::const::SOCKET_FAMILY_UNIX)),
+  :PF_UNSPEC(nqp::p6box_i(nqp::const::ADDRESS_FAMILY_UNSPEC)),
+  :PF_INET(nqp::p6box_i(nqp::const::ADDRESS_FAMILY_INET)),
+  :PF_INET6(nqp::p6box_i(nqp::const::ADDRESS_FAMILY_INET6)),
+  :PF_LOCAL(nqp::p6box_i(nqp::const::ADDRESS_FAMILY_UNIX)),
+  :PF_UNIX(nqp::p6box_i(nqp::const::ADDRESS_FAMILY_UNIX)),
 );
 
 # TODO: These should be nqp constants.

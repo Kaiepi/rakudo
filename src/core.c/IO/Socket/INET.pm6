@@ -18,7 +18,7 @@ my class IO::Socket::INET does IO::Socket {
     has Int  $.localport;
     has Int  $.backlog;
     has Bool $.listening;
-    has      $.family     = nqp::const::SOCKET_FAMILY_UNSPEC;
+    has      $.family     = nqp::const::ADDRESS_FAMILY_UNSPEC;
     has      $.type       = PIO::SOCK_STREAM;
     has      $.proto      = PIO::IPPROTO_ANY;
 
@@ -26,7 +26,7 @@ my class IO::Socket::INET does IO::Socket {
     # families...
     my sub split-host-port(:$host is copy, :$port is copy, :$family) {
         if ($host) {
-            my ($split-host, $split-port) = $family == nqp::const::SOCKET_FAMILY_INET6
+            my ($split-host, $split-port) = $family == nqp::const::ADDRESS_FAMILY_INET6
                 ?? v6-split($host)
                 !! v4-split($host);
 
@@ -57,17 +57,17 @@ my class IO::Socket::INET does IO::Socket {
         Str    :$localhost is copy,
         Int    :$localport is copy,
         Int    :$family where {
-                $family == nqp::const::SOCKET_FAMILY_UNSPEC
-             || $family == nqp::const::SOCKET_FAMILY_INET
-             || $family == nqp::const::SOCKET_FAMILY_INET6
-             || $family == nqp::const::SOCKET_FAMILY_UNIX
-        } = nqp::const::SOCKET_FAMILY_UNSPEC,
+                $family == nqp::const::ADDRESS_FAMILY_UNSPEC
+             || $family == nqp::const::ADDRESS_FAMILY_INET
+             || $family == nqp::const::ADDRESS_FAMILY_INET6
+             || $family == nqp::const::ADDRESS_FAMILY_UNIX
+        } = nqp::const::ADDRESS_FAMILY_UNSPEC,
                *%rest,
         --> IO::Socket::INET:D) {
 
         ($localhost, $localport) = (
             split-host-port :host($localhost), :port($localport), :$family
-        orelse fail $_) unless $family == nqp::const::SOCKET_FAMILY_UNIX;
+        orelse fail $_) unless $family == nqp::const::ADDRESS_FAMILY_UNIX;
 
         #TODO: Learn what protocols map to which socket types and then determine which is needed.
         self.bless(
@@ -84,11 +84,11 @@ my class IO::Socket::INET does IO::Socket {
         Str:D :$host! is copy,
         Int   :$port is copy,
         Int   :$family where {
-               $family == nqp::const::SOCKET_FAMILY_UNSPEC
-            || $family == nqp::const::SOCKET_FAMILY_INET
-            || $family == nqp::const::SOCKET_FAMILY_INET6
-            || $family == nqp::const::SOCKET_FAMILY_UNIX
-        } = nqp::const::SOCKET_FAMILY_UNSPEC,
+               $family == nqp::const::ADDRESS_FAMILY_UNSPEC
+            || $family == nqp::const::ADDRESS_FAMILY_INET
+            || $family == nqp::const::ADDRESS_FAMILY_INET6
+            || $family == nqp::const::ADDRESS_FAMILY_UNIX
+        } = nqp::const::ADDRESS_FAMILY_UNSPEC,
               *%rest,
         --> IO::Socket::INET:D) {
 
@@ -96,7 +96,7 @@ my class IO::Socket::INET does IO::Socket {
             :$host,
             :$port,
             :$family,
-        ) unless $family == nqp::const::SOCKET_FAMILY_UNIX;
+        ) unless $family == nqp::const::ADDRESS_FAMILY_UNIX;
 
         # TODO: Learn what protocols map to which socket types and then determine which is needed.
         self.bless(
@@ -120,7 +120,7 @@ my class IO::Socket::INET does IO::Socket {
         # If Listen is defined then a listen socket is created, else if the socket type,
         # which is derived from the protocol, is SOCK_STREAM then connect() is called.
         if $!listening || $!localhost || $!localport {
-            if $!family == nqp::const::SOCKET_FAMILY_UNIX {
+            if $!family == nqp::const::ADDRESS_FAMILY_UNIX {
                 my IO::Address::UNIX:D $address := IO::Address::UNIX.new:
                     $!localhost,
                     type     => SocketType($!type),
@@ -149,12 +149,12 @@ my class IO::Socket::INET does IO::Socket {
         if $!listening {
 #?if !js
             $!localport = nqp::getport($PIO)
-                  unless $!localport || ($!family == nqp::const::SOCKET_FAMILY_UNIX);
+                  unless $!localport || ($!family == nqp::const::ADDRESS_FAMILY_UNIX);
 #?endif
         }
         # XXX: Compiler bugs a-plenty if you make the two following elsifs one elsif with
         # an if block inside it!
-        elsif $!type == PIO::SOCK_STREAM && $!family == nqp::const::SOCKET_FAMILY_UNIX {
+        elsif $!type == PIO::SOCK_STREAM && $!family == nqp::const::ADDRESS_FAMILY_UNIX {
             my IO::Address::UNIX:D $address := IO::Address::UNIX.new:
                 $!host,
                 type     => SocketType($!type),
