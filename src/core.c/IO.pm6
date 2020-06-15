@@ -17,23 +17,21 @@ enum ProtocolFamily (
   :PF_UNIX(nqp::p6box_i(nqp::const::ADDRESS_FAMILY_UNIX)),
 );
 
-# TODO: These should be nqp constants.
 enum SocketType (
-  :SOCK_ANY(0),
-  :SOCK_STREAM(1),
-  :SOCK_DGRAM(2),
-  :SOCK_RAW(3),
-  :SOCK_RDM(4),
-  :SOCK_SEQPACKET(5),
+  :SOCK_ANY(nqp::p6box_i(nqp::const::ADDRESS_TYPE_ANY)),
+  :SOCK_STREAM(nqp::p6box_i(nqp::const::ADDRESS_TYPE_STREAM)),
+  :SOCK_DGRAM(nqp::p6box_i(nqp::const::ADDRESS_TYPE_DGRAM)),
+  :SOCK_RAW(nqp::p6box_i(nqp::const::ADDRESS_TYPE_RAW)),
+  :SOCK_RDM(nqp::p6box_i(nqp::const::ADDRESS_TYPE_RDM)),
+  :SOCK_SEQPACKET(nqp::p6box_i(nqp::const::ADDRESS_TYPE_SEQPACKET)),
 );
 
-# TODO: These should be nqp constants.
 # TODO: More protocols will be needed eventually, once support for socket
 # options and raw sockets exists.
 enum ProtocolType (
-  :IPPROTO_ANY(0),
-  :IPPROTO_TCP(1),
-  :IPPROTO_UDP(2),
+  :IPPROTO_ANY(nqp::p6box_i(nqp::const::ADDRESS_PROTOCOL_ANY)),
+  :IPPROTO_TCP(nqp::p6box_i(nqp::const::ADDRESS_PROTOCOL_TCP)),
+  :IPPROTO_UDP(nqp::p6box_i(nqp::const::ADDRESS_PROTOCOL_UDP)),
 );
 
 constant PROTO_TCP = IPPROTO_TCP;

@@ -1,13 +1,5 @@
 my class IO::Socket::INET does IO::Socket {
     my module PIO {
-        constant SOCK_STREAM    = 1;
-        constant SOCK_DGRAM     = 2;
-        constant SOCK_RAW       = 3;
-        constant SOCK_RDM       = 4;
-        constant SOCK_SEQPACKET = 5;
-        constant IPPROTO_ANY    = 0;
-        constant IPPROTO_TCP    = 1;
-        constant IPPROTO_UDP    = 2;
         constant MIN_PORT       = 0;
         constant MAX_PORT       = 65_535; # RFC 793: TCP/UDP port limit
     }
@@ -19,8 +11,8 @@ my class IO::Socket::INET does IO::Socket {
     has Int  $.backlog;
     has Bool $.listening;
     has      $.family     = nqp::const::ADDRESS_FAMILY_UNSPEC;
-    has      $.type       = PIO::SOCK_STREAM;
-    has      $.proto      = PIO::IPPROTO_ANY;
+    has      $.type       = nqp::const::ADDRESS_TYPE_STREAM;
+    has      $.proto      = nqp::const::ADDRESS_PROTOCOL_ANY;
 
     # XXX: this could be a bit smarter about how it deals with unspecified
     # families...
@@ -154,7 +146,7 @@ my class IO::Socket::INET does IO::Socket {
         }
         # XXX: Compiler bugs a-plenty if you make the two following elsifs one elsif with
         # an if block inside it!
-        elsif $!type == PIO::SOCK_STREAM && $!family == nqp::const::ADDRESS_FAMILY_UNIX {
+        elsif $!type == nqp::const::ADDRESS_TYPE_STREAM && $!family == nqp::const::ADDRESS_FAMILY_UNIX {
             my IO::Address::UNIX:D $address := IO::Address::UNIX.new:
                 $!host,
                 type     => SocketType($!type),
@@ -163,7 +155,7 @@ my class IO::Socket::INET does IO::Socket {
                 nqp::unbox_i($!family), nqp::unbox_i($!type), nqp::unbox_i($!proto),
                 nqp::getattr($address, $address.WHAT, '$!VM-address'));
         }
-        elsif $!type == PIO::SOCK_STREAM {
+        elsif $!type == nqp::const::ADDRESS_TYPE_STREAM {
             my Iterable:D $addresses := $*RESOLVER.resolve:
                 $!host, $!port,
                 family   => ProtocolFamily($!family),
