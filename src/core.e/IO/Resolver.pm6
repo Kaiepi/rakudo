@@ -77,6 +77,12 @@ my class IO::Resolver {
     my subset AddressType     of SocketType:D     where SOCK_ANY | SOCK_STREAM | SOCK_DGRAM | SOCK_RAW;
     my subset AddressProtocol of ProtocolType:D   where IPPROTO_ANY | IPPROTO_TCP | IPPROTO_UDP;
 
+    my class AddressPair {
+        has IO::Address::IPv6:_ $.source;
+        has IO::Address::IPv6:D $.peer     is required;
+        has Bool:D              $.upgraded is required;
+    }
+
     proto method resolve(::?CLASS:D: Str:D, Int:D --> Iterable:D) {*}
     multi method resolve(
         ::?CLASS:D:
@@ -139,25 +145,34 @@ my class IO::Resolver {
             $*SCHEDULER.cue({
                 # Begin by making an AAAA query followed by an A query,
                 # in parallel, as closely together as we can:
-                await start for await self.query: $host, C_IN, T_AAAA -> IO::Address::IPv6:D $address {
+                await start for await self.query: $host, C_IN, T_AAAA -> IO::Address::IPv6:D $peer is copy {
                     # If an IPv6 address was the first address
                     # received, then go ahead with connecting now:
                     FIRST try-to-proceed;
-                    # Complete our IPv6 address and push it to the queue:
-                    nqp::push($queue, $address);
-                }, start for await self.query: $host, C_IN, T_A -> IO::Address::IPv4 $address {
+
+                    # Push our address pair to the queue:
+                    $peer .= new: $port;
+                    my IO::Address::IPv6:_ $source = try get-source-for $peer;
+                    nqp::push($queue, AddressPair.new: :$source, :$peer, :!upgraded);
+                }, start for await self.query: $host, C_IN, T_A -> IO::Address::IPv4:D $peer is copy {
                     # If the first address we wind up receiving is an
                     # IPv4 one, then await the recommended resolution
                     # delay of 50ms before proceeding to connect with
                     # any addresses received during that point, so
                     # long as they're all IPv4 addresses:
                     FIRST $*SCHEDULER.cue: &try-to-proceed, in => 0.050 unless $init;
-                    # Complete our IPv4 address and push it t∘ the queue:
-                    nqp::push($queue, $address);
+
+                    # Push our address pair to the queue:
+                    $peer .= new: $port;
+                    with try get-source-for $peer -> IO::Address::IPv4:D $source {
+                        nqp::push($queue, AddressPair.new: :source($source.upgrade), :peer($peer.upgrade), :upgraded);
+                    } else {
+                        nqp::push($queue, AddressPair.new: :peer($peer.upgrade), :upgraded);
+                    }
                 };
                 LEAVE {
                     # Mark the end of the queue:
-                    nqp::push($queue, IO::Address);
+                    nqp::push($queue, AddressPair);
                     # Ensure we can proceed to sort and connect:
                     try-to-proceed;
                 }
@@ -165,28 +180,25 @@ my class IO::Resolver {
             $init_cond.wait;
             $init_lock.unlock;
 
-            until (my IO::Address:_ $address := nqp::shift($queue)) =:= IO::Address {
+            until (my AddressPair:_ $address := nqp::shift($queue)) =:= AddressPair {
                 take $address;
             }
-        }.map({
-            when IO::Address::IPv4 {
+        }.sort(&address-sorter).map({
+            if .upgraded {
                 slip do for @ipv4-solutions -> ($type, $protocol) {
-                    .new: $port, :$type, :$protocol
+                    .peer.downgrade.new: $port, :$type, :$protocol
                 }
             }
-            when IO::Address::IPv6 {
+            else {
                 slip do for @ipv6-solutions -> ($type, $protocol) {
-                    .new: $port, :$type, :$protocol
+                    .peer.new: $port, :$type, :$protocol
                 }
-            }
-            default { # Should never happen.
-                slip
             }
         })
     }
 
     # Helper routine for getting any extra address information not included in
-    # the A/AAAA DNS records queried by IO::Resolver.resolve.
+    # the A/AAAA DNS records queried by the resolve method.
     #
     # getaddrinfo can only return addresses with hints matching a small set
     # of families, types, and protocols. This differs from platform to
@@ -221,6 +233,64 @@ my class IO::Resolver {
             (do (SOCK_STREAM, IPPROTO_TCP) if $mask +& 0b1001010 == 0b1001010),
             (do (SOCK_RAW, IPPROTO_ANY)    if $mask +& 0b1010011 == 0b1010011),
         ))
+    }
+
+    # Helper routine for getting the source address to be used when making a
+    # connection to a peer for the resolve method.
+    sub get-source-for(::T IO::Address::IP:D $peer --> IO::Address::IP:_) {
+        my Mu $socket := nqp::socket(0);
+        LEAVE nqp::if(nqp::isconcrete($socket), nqp::closefh($socket));
+        nqp::connect($socket,
+          nqp::unbox_i($peer.family.Int), nqp::const::ADDRESS_TYPE_DGRAM, nqp::const::ADDRESS_PROTOCOL_UDP,
+          nqp::getattr(nqp::decont($peer), T, '$!VM-address'));
+        nqp::p6bindattrinvres(nqp::create(T), T, '$!VM-address', nqp::getsockname($socket))
+    }
+
+    # Helper routine for sorting addresses for the resolve method.
+    sub address-sorter(AddressPair:D $a, AddressPair:D $b) {
+        # Rule 1: Avoid unusable destinations.
+        my Bool:D $a-source-defined := $a.source.DEFINITE;
+        my Bool:D $b-source-defined := $b.source.DEFINITE;
+        return Less if $a-source-defined && !$b-source-defined;
+        return More if !$a-source-defined && $b-source-defined;
+
+        if $a-source-defined && $b-source-defined {
+            # Rule 2: Prefer matching scope.
+            my Bool:D $a-scope-equal := $a.source.scope == $a.peer.scope;
+            my Bool:D $b-scope-equal := $b.source.scope == $b.peer.scope;
+            return Less if !$a-scope-equal && $b-scope-equal;
+            return More if $a-scope-equal && !$b-scope-equal;
+
+            # Rule 3: Avoid deprecated addresses.
+            # TODO
+
+            # Rule 4: Prefer home addresses.
+            # TODO
+
+            # Rule 5: Prefer matching label.
+            # TODO
+
+            # Rule 6: Prefer higher precedence.
+            # TODO
+        }
+
+        # Rule 7: Prefer native transport.
+        my Blob:D $a-peer-raw  := $a.peer.raw;
+        my Blob:D $b-peer-raw  := $b.peer.raw;
+        my Bool:D $a-is-native := not $a-peer-raw[0..9].all == 0 && $a-peer-raw[10..11].all == 0x00 | 0xFF;
+        my Bool:D $b-is-native := not $b-peer-raw[0..9].all == 0 && $b-peer-raw[10..11].all == 0x00 | 0xFF;
+        return Less if $a-is-native && !$b-is-native;
+        return More if !$a-is-native && $b-is-native;
+
+        # Rule 8: Prefer smaller scope.
+        my Order:D $peer-scope-cmp := $a.peer.scope cmp $b.peer.scope;
+        return $peer-scope-cmp if $peer-scope-cmp;
+
+        # Rule 9: Use longest matching prefix.
+        # TODO
+
+        # Rule 10: Otherwise, leave the order unchanged.
+        Same
     }
 }
 
