@@ -1,4 +1,4 @@
-my class IO::Resolver is repr('Resolver') { ... }
+my class IO::Resolver { ... }
 
 enum IO::Resolver::Type (
     T_A    => 1,
@@ -10,6 +10,60 @@ enum IO::Resolver::Class (
 );
 
 my class IO::Resolver {
+    my class Context is repr('Resolver') { }
+
+    my class Policy {
+        has Int:D $.prefix     is required where 0..^1 +< 129;
+        has Int:D $.length     is required where 0..128;
+        has Int:D $.label      is required;
+        has Int:D $.precedence is required;
+
+        method matches(::?CLASS:D: Int:D $native-address where 0..^1 +< 129 --> Bool:D) {
+            my Int:D $mask := $!prefix ?? $!prefix +< (128 - $!length) !! (1 +< $!length + 1) - 1;
+            $native-address +& $mask == $native-address
+        }
+    }
+
+    my class PolicyTable {
+        has Policy:D @!policies;
+
+        submethod BUILD(::?CLASS:D: :@policies! --> Nil) {
+            @!policies = @policies.map(-> (Str:D $presentation, Int:D $length where 0..128, Int:D $label, Int:D $precedence) {
+                my IO::Address::IPv6:D $address := IO::Address::IPv6.new: $presentation;
+                my Int:D               $prefix  := $address.raw.contents.reduce(* +< 8 +| *) +> (128 - $length);
+                Policy.new: :$prefix, :$length, :$label, :$precedence
+            });
+        }
+
+        method new(::?CLASS:_: @policies --> ::?CLASS:D) {
+            self.bless: :@policies
+        }
+
+        method lookup-label(::?CLASS:D: IO::Address::IPv6:D $address --> Int:D) {
+            my Int:D    $native-address := $address.raw.contents.reduce: * +< 8 +| *;
+            my Policy:D @matches         = @!policies.grep: *.matches: $native-address;
+            @matches ?? @matches».label.max !! 1
+        }
+
+        method lookup-precedence(::?CLASS:D: IO::Address::IPv6:D $address --> Int:D) {
+            my Int:D    $native-address := $address.raw.contents.reduce: * +< 8 +| *;
+            my Policy:D @matches         = @!policies.grep: *.matches: $native-address;
+            @matches ?? @matches».precedence.max !! 1
+        }
+    }
+
+    has Context:D     $!context      is required;
+    has PolicyTable:D $!policy-table is required;
+
+    my constant @DEFAULT-POLICIES =
+        ('::1', 128, 50, 0), ('::', 0, 40, 1), ('::FFFF:0:0', 96, 35, 4),
+        ('2002::', 16, 30, 2), ('2001::', 32, 5, 5), ('FC00::', 7, 3, 13),
+        ('::', 96, 1, 3), ('FEC0::', 10, 1, 11), ('3FFE::', 16, 1, 12);
+    submethod BUILD(::?CLASS:D: :@policies = @DEFAULT-POLICIES --> Nil) {
+        $!context      := nqp::create(Context);
+        $!policy-table := PolicyTable.new: @policies;
+    }
+
     my class Queue     is repr('ConcBlockingQueue') { }
     my class AsyncTask is repr('AsyncTask')         { }
 
@@ -24,7 +78,7 @@ my class IO::Resolver {
     ) {
         my Promise:D $p := Promise.new;
         my           $v := $p.vow;
-        nqp::asyncdnsquery(self,
+        nqp::asyncdnsquery($!context,
           nqp::decont_s($name),
           nqp::unbox_i($class.value),
           nqp::unbox_i($type.value),
@@ -53,7 +107,7 @@ my class IO::Resolver {
     ) {
         my Promise:D $p := Promise.new;
         my           $v := $p.vow;
-        nqp::asyncdnsquery(self,
+        nqp::asyncdnsquery($!context,
           nqp::decont_s($name),
           nqp::unbox_i($class.value),
           nqp::unbox_i($type.value),
@@ -210,11 +264,11 @@ my class IO::Resolver {
                 # Mark the end of the queue, sort the addresses, then complete
                 # and emit the results:
                 nqp::push($queue, AddressPair);
-                for gather {
+                for sort { self!compare-address-pairs: $^a, $^b }, gather {
                     until (my AddressPair:_ $pair := nqp::shift($queue)) =:= AddressPair {
                         take $pair;
                     }
-                }.sort(&address-sorter) -> AddressPair:D $pair {
+                } -> AddressPair:D $pair {
                     if $pair.upgraded {
                         for @ipv4-solutions -> ($type, $protocol) {
                             emit IO::Address::Info.new: $pair.peer.downgrade, :$type, :$protocol
@@ -280,20 +334,19 @@ my class IO::Resolver {
         nqp::p6bindattrinvres(nqp::create(T), T, '$!VM-address', nqp::getsockname($socket))
     }
 
-    # Helper routine for sorting addresses for the resolve method.
-    sub address-sorter(AddressPair:D $a, AddressPair:D $b --> Order:D) {
+    method !compare-address-pairs(AddressPair:D $a, AddressPair:D $b --> Order:D) {
         # Rule 1: Avoid unusable destinations.
-        my Bool:D $a-source-defined := $a.source.DEFINITE;
-        my Bool:D $b-source-defined := $b.source.DEFINITE;
-        return Less if $a-source-defined && !$b-source-defined;
-        return More if !$a-source-defined && $b-source-defined;
+        my Bool:D  $a-source-defined := $a.source.DEFINITE;
+        my Bool:D  $b-source-defined := $b.source.DEFINITE;
+        my Order:D $source-defined   := $b-source-defined cmp $a-source-defined;
+        return $source-defined if $source-defined;
 
         if $a-source-defined && $b-source-defined {
             # Rule 2: Prefer matching scope.
-            my Bool:D $a-scope-equal := $a.source.scope == $a.peer.scope;
-            my Bool:D $b-scope-equal := $b.source.scope == $b.peer.scope;
-            return Less if !$a-scope-equal && $b-scope-equal;
-            return More if $a-scope-equal && !$b-scope-equal;
+            my Order:D $scope-matches := reduce * cmp *, map {
+                .source.scope == .peer.scope
+            }, $b, $a;
+            return $scope-matches if $scope-matches;
 
             # Rule 3: Avoid deprecated addresses.
             # TODO
@@ -302,23 +355,23 @@ my class IO::Resolver {
             # TODO
 
             # Rule 5: Prefer matching label.
-            # TODO
-
-            # Rule 6: Prefer higher precedence.
-            # TODO
+            my Order:D $label-matches := reduce * cmp *, map {
+                [==] map { $!policy-table.lookup-label: $_ }, .source, .peer
+            }, $b, $a;
+            return $label-matches if $label-matches;
         }
 
+        # Rule 6: Prefer higher precedence.
+        my Order:D $precedence-cmp := reduce * cmp *, map {
+            $!policy-table.lookup-precedence: .peer
+        }, $a, $b;
+        return $precedence-cmp if $precedence-cmp;
+
         # Rule 7: Prefer native transport.
-        my Bool:D $a-is-native := not $a.upgraded || do {
-            my Blob:D $a-peer-raw := $a.peer.raw;
-            $a-peer-raw[0..9].all == 0 && $a-peer-raw[10..11].all == 0x00 | 0xFF
-        };
-        my Bool:D $b-is-native := not $b.upgraded || do {
-            my Blob:D $b-peer-raw := $b.peer.raw;
-            $b-peer-raw[0..9].all == 0 && $b-peer-raw[10..11].all == 0x00 | 0xFF
-        };
-        return Less if $a-is-native && !$b-is-native;
-        return More if !$a-is-native && $b-is-native;
+        my Order:D $is-native := reduce * cmp *, map {
+            .upgraded || .peer.is-ipv4-mapped || .peer.is-ipv4-compatible
+        }, $b, $a;
+        return $is-native if $is-native;
 
         # Rule 8: Prefer smaller scope.
         my Order:D $peer-scope-cmp := $a.peer.scope cmp $b.peer.scope;
