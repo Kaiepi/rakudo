@@ -178,7 +178,7 @@ my class IO::Socket::Async {
             $host, $port,
             family   => PF_UNSPEC,
             type     => SOCK_STREAM,
-            protocol => IPPROTO_ANY,
+            protocol => IPPROTO_TCP,
             passive  => True, # For the sake of compatibility with older compiler releases.
         ), sub (IO::Address:D $address) {
             my Encoding:D $encoding := Encoding::Registry.find($enc);
@@ -244,7 +244,7 @@ my class IO::Socket::Async {
                 $!host, $!port,
                 family   => PF_UNSPEC,
                 type     => SOCK_STREAM,
-                protocol => IPPROTO_ANY,
+                protocol => IPPROTO_TCP,
                 passive  => True,
             ), sub (IO::Address:D $address) {
                 my Lock::Async:D $lock        := Lock::Async.new;
@@ -374,7 +374,7 @@ my class IO::Socket::Async {
             $host, $port,
             family   => PF_UNSPEC,
             type     => SOCK_DGRAM,
-            protocol => IPPROTO_ANY,
+            protocol => IPPROTO_UDP,
             passive  => True
         ), sub (IO::Address:D $address) {
             my Encoding:D $encoding := Encoding::Registry.find($enc);
@@ -415,7 +415,7 @@ my class IO::Socket::Async {
             $host, $port,
             family   => PF_UNSPEC,
             type     => SOCK_DGRAM,
-            protocol => IPPROTO_ANY,
+            protocol => IPPROTO_UDP,
             passive  => True, # For the sake of compatibility with older compiler releases.
         ), sub (IO::Address:D $address) {
             my Promise:D  $p := Promise.new;
