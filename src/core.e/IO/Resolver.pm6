@@ -94,7 +94,8 @@ my class IO::Resolver {
     ) {
         supply {
             my (@ipv4-solutions, @) := take-a-hint $family, $type, $protocol;
-            for await self.query: $host, C_IN, T_A -> IO::Address::IPv4:D $address {
+            for (try IO::Address::IPv4.new: $host, $port)
+             // await self.query: $host, C_IN, T_A -> IO::Address::IPv4:D $address {
                 my IO::Address::IPv4:D $result := $address.new: $port;
                 for @ipv4-solutions -> ($type, $protocol) {
                     emit IO::Address::Info.new: $result, :$type, :$protocol;
@@ -112,7 +113,8 @@ my class IO::Resolver {
     ) {
         supply {
             my (@, @ipv6-solutions) := take-a-hint $family, $type, $protocol;
-            for await self.query: $host, C_IN, T_AAAA -> IO::Address::IPv6:D $address {
+            for (try IO::Address::IPv6.new: $host, $port)
+             // await self.query: $host, C_IN, T_AAAA -> IO::Address::IPv6:D $address {
                 my IO::Address::IPv6:D $result := $address.new: $port;
                 for @ipv6-solutions -> ($type, $protocol) {
                     emit IO::Address::Info.new: $result, :$type, :$protocol;
@@ -128,17 +130,35 @@ my class IO::Resolver {
         AddressProtocol:D :$protocol = IPPROTO_ANY
         --> Supply:D
     ) {
-        # Implementation of RFC8305 (Happy Eyeballs v2):
         supply {
-            # Begin by making an AAAA query followed by an A query,
-            # in parallel, as closely together as we can:
             my (@ipv4-solutions, @ipv6-solutions) := take-a-hint $family, $type, $protocol;
-            my Queue:D   $queue                   := nqp::create(Queue);
-            my atomicint $init                     = 0;
-            my Promise:D $query-aaaa              := self.query: $host, C_IN, T_AAAA;
-            my Promise:D $query-a                 := self.query: $host, C_IN, T_A;
-            my Promise:D $done-aaaa               := Promise.new;
-            my Promise:D $done-a                  := Promise.new;
+
+            # Check if the hostname given is really an IP address in its
+            # presentation format, and emit the completed addresses immediately
+            # if so:
+            with try IO::Address::IPv6.new: $host, $port -> IO::Address::IPv6:D $result {
+                for @ipv6-solutions -> ($type, $protocol) {
+                    emit IO::Address::Info.new: $result, :$type, :$protocol;
+                }
+                done;
+            }
+            with try IO::Address::IPv4.new: $host, $port -> IO::Address::IPv4:D $result {
+                for @ipv4-solutions -> ($type, $protocol) {
+                    emit IO::Address::Info.new: $result, :$type, :$protocol;
+                }
+                done;
+            }
+
+            # Implementation of RFC8305 (Happy Eyeballs v2):
+
+            # Make an AAAA query followed by an A query, in parallel, as
+            # closely together as we can:
+            my Queue:D   $queue      := nqp::create(Queue);
+            my atomicint $init        = 0;
+            my Promise:D $done-aaaa  := Promise.new;
+            my Promise:D $done-a     := Promise.new;
+            my Promise:D $query-aaaa := self.query: $host, C_IN, T_AAAA;
+            my Promise:D $query-a    := self.query: $host, C_IN, T_A;
             whenever $query-aaaa -> @addresses {
                 if cas $init, 0, 1 {
                     # IPv4 addresses were received first, despite the
@@ -168,14 +188,9 @@ my class IO::Resolver {
                 # getting queued for sorting, if that ever happens.
                 if ⚛$init {
                     for @addresses {
-                        my IO::Address::IPv4:D $peer := .new: $port;
-                        with try get-source-for $peer -> IO::Address::IPv4:D $source {
-                            nqp::push($queue,
-                              AddressPair.new: :source($source.upgrade), :peer($peer.upgrade), :upgraded);
-                        } else {
-                            nqp::push($queue,
-                              AddressPair.new: :peer($peer.upgrade), :upgraded);
-                        }
+                        my IO::Address::IPv4:D $peer   = .new: $port;
+                        my IO::Address::IPv4:_ $source = try get-source-for $peer;
+                        nqp::push($queue, AddressPair.new: :source($source.?upgrade), :peer($peer.upgrade), :upgraded);
                     }
                     $done-a.keep;
                 }
@@ -183,24 +198,18 @@ my class IO::Resolver {
                     whenever Promise.in(0.050) {
                         cas $init, 0, 1;
                         for @addresses {
-                            my IO::Address::IPv4:D $peer := .new: $port;
-                            with try get-source-for $peer -> IO::Address::IPv4:D $source {
-                                nqp::push($queue,
-                                  AddressPair.new: :source($source.upgrade), :peer($peer.upgrade), :upgraded);
-                            } else {
-                                nqp::push($queue,
-                                  AddressPair.new: :peer($peer.upgrade), :upgraded);
-                            }
+                            my IO::Address::IPv4:D $peer   = .new: $port;
+                            my IO::Address::IPv4:_ $source = try get-source-for $peer;
+                            nqp::push($queue, AddressPair.new: :source($source.?upgrade), :peer($peer.upgrade), :upgraded);
                         }
                         $done-a.keep;
                     }
                 }
             }
             whenever Promise.allof: $done-aaaa, $done-a {
-                # Signal the end of the queue:
+                # Mark the end of the queue, sort the addresses, then complete
+                # and emit the results:
                 nqp::push($queue, AddressPair);
-                # Sort the addresses, then emit the resulting addresses, completed with
-                # the family/type/protocol hints given:
                 for gather {
                     until (my AddressPair:_ $pair := nqp::shift($queue)) =:= AddressPair {
                         take $pair;
@@ -272,7 +281,7 @@ my class IO::Resolver {
     }
 
     # Helper routine for sorting addresses for the resolve method.
-    sub address-sorter(AddressPair:D $a, AddressPair:D $b) {
+    sub address-sorter(AddressPair:D $a, AddressPair:D $b --> Order:D) {
         # Rule 1: Avoid unusable destinations.
         my Bool:D $a-source-defined := $a.source.DEFINITE;
         my Bool:D $b-source-defined := $b.source.DEFINITE;
@@ -300,10 +309,14 @@ my class IO::Resolver {
         }
 
         # Rule 7: Prefer native transport.
-        my Blob:D $a-peer-raw  := $a.peer.raw;
-        my Blob:D $b-peer-raw  := $b.peer.raw;
-        my Bool:D $a-is-native := not $a-peer-raw[0..9].all == 0 && $a-peer-raw[10..11].all == 0x00 | 0xFF;
-        my Bool:D $b-is-native := not $b-peer-raw[0..9].all == 0 && $b-peer-raw[10..11].all == 0x00 | 0xFF;
+        my Bool:D $a-is-native := not $a.upgraded || do {
+            my Blob:D $a-peer-raw := $a.peer.raw;
+            $a-peer-raw[0..9].all == 0 && $a-peer-raw[10..11].all == 0x00 | 0xFF
+        };
+        my Bool:D $b-is-native := not $b.upgraded || do {
+            my Blob:D $b-peer-raw := $b.peer.raw;
+            $b-peer-raw[0..9].all == 0 && $b-peer-raw[10..11].all == 0x00 | 0xFF
+        };
         return Less if $a-is-native && !$b-is-native;
         return More if !$a-is-native && $b-is-native;
 
