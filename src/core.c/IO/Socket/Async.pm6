@@ -174,16 +174,16 @@ my class IO::Socket::Async {
 
     method connect(IO::Socket::Async:U: Str() $host, Int() $port where Port-Number,
                    :$enc = 'utf-8', :$scheduler = $*SCHEDULER) {
-        my Encoding:D $encoding   = Encoding::Registry.find($enc);
-        my Iterable:D $addresses := $*RESOLVER.resolve:
+        &*CONNECT($*RESOLVER.resolve(
             $host, $port,
             family   => PF_UNSPEC,
             type     => SOCK_STREAM,
             protocol => IPPROTO_ANY,
-            passive  => True; # For the sake of compatibility with older compiler releases.
-        &*CONNECT($addresses, sub (IO::Address:D $address) {
-            my Promise:D  $p := Promise.new;
-            my            $v  = $p.vow;
+            passive  => True, # For the sake of compatibility with older compiler releases.
+        ), sub (IO::Address:D $address) {
+            my Encoding:D $encoding := Encoding::Registry.find($enc);
+            my Promise:D  $p        := Promise.new;
+            my            $v         = $p.vow;
             nqp::asyncconnect(
               nqp::getattr(nqp::decont($address), $address.WHAT, '$!VM-address'),
               $scheduler.queue,
@@ -240,13 +240,13 @@ my class IO::Socket::Async {
         method !SET-SELF($!host, $!port, $!backlog, $!encoding, $!scheduler) { self }
 
         method tap(&emit, &done, &quit, &tap) {
-            my Iterable:D $addresses := $*RESOLVER.resolve:
+            &*CONNECT($*RESOLVER.resolve(
                 $!host, $!port,
                 family   => PF_UNSPEC,
                 type     => SOCK_STREAM,
                 protocol => IPPROTO_ANY,
-                passive  => True;
-            &*CONNECT($addresses, sub (IO::Address:D $address) {
+                passive  => True,
+            ), sub (IO::Address:D $address) {
                 my Lock::Async:D $lock        := Lock::Async.new;
                 my Tap:_         $tap;
                 my int           $finished     = 0;
@@ -370,16 +370,16 @@ my class IO::Socket::Async {
 
     method bind-udp(IO::Socket::Async:U: Str() $host, Int() $port where Port-Number,
                     :$broadcast, :$enc = 'utf-8', :$scheduler = $*SCHEDULER) {
-        my Encoding:D $encoding  := Encoding::Registry.find($enc);
-        my Iterable:D $addresses := $*RESOLVER.resolve:
+        &*CONNECT($*RESOLVER.resolve(
             $host, $port,
             family   => PF_UNSPEC,
             type     => SOCK_DGRAM,
             protocol => IPPROTO_ANY,
-            passive  => True;
-        &*CONNECT($addresses, sub (IO::Address:D $address) {
-            my Promise:D $p := Promise.new;
-            my           $v := $p.vow;
+            passive  => True
+        ), sub (IO::Address:D $address) {
+            my Encoding:D $encoding := Encoding::Registry.find($enc);
+            my Promise:D  $p        := Promise.new;
+            my            $v        := $p.vow;
             nqp::asyncudp(
               nqp::getattr(nqp::decont($address), $address.WHAT, '$!VM-address'),
               $broadcast ?? 1 !! 0,
@@ -401,7 +401,7 @@ my class IO::Socket::Async {
               },
               SocketCancellation);
             await $p
-        });
+        })
     }
 
     method print-to(IO::Socket::Async:D: Str() $host, Int() $port where Port-Number,
@@ -411,13 +411,13 @@ my class IO::Socket::Async {
 
     method write-to(IO::Socket::Async:D: Str() $host, Int() $port where Port-Number,
                     Blob $b, :$scheduler = $*SCHEDULER) {
-        my Iterable:D $addresses := $*RESOLVER.resolve:
+        &*CONNECT($*RESOLVER.resolve(
             $host, $port,
             family   => PF_UNSPEC,
             type     => SOCK_DGRAM,
             protocol => IPPROTO_ANY,
-            passive  => True; # For the sake of compatibility with older compiler releases.
-        &*CONNECT($addresses, sub (IO::Address:D $address) {
+            passive  => True, # For the sake of compatibility with older compiler releases.
+        ), sub (IO::Address:D $address) {
             my Promise:D  $p := Promise.new;
             my            $v := $p.vow;
             nqp::asyncwritebytesto(
@@ -435,7 +435,7 @@ my class IO::Socket::Async {
               },
               SocketCancellation);
             $p
-        });
+        })
     }
 #?endif
 }

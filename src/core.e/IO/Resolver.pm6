@@ -83,20 +83,20 @@ my class IO::Resolver {
         has Bool:D              $.upgraded is required;
     }
 
-    proto method resolve(::?CLASS:D: Str:D, Int:D --> Iterable:D) {*}
+    proto method resolve(::?CLASS:D: Str:D, Int:D --> Supply:D) {*}
     multi method resolve(
         ::?CLASS:D:
         $host, $port,
         PF_INET           :$family!;;
         AddressType:D     :$type      = SOCK_ANY,
         AddressProtocol:D :$protocol  = IPPROTO_ANY
-        --> Iterable:D
+        --> Supply:D
     ) {
-        gather {
+        supply {
             my (@ipv4-solutions, @) := take-a-hint $family, $type, $protocol;
             for await self.query: $host, C_IN, T_A -> IO::Address::IPv4:D $address {
                 for @ipv4-solutions -> ($type, $protocol) {
-                    take $address.new: $port, :$type, :$protocol;
+                    emit $address.new: $port, :$type, :$protocol;
                 }
             }
         }
@@ -107,13 +107,13 @@ my class IO::Resolver {
         PF_INET6          :$family!;;
         AddressType:D     :$type      = SOCK_ANY,
         AddressProtocol:D :$protocol  = IPPROTO_ANY
-        --> Iterable:D
+        --> Supply:D
     ) {
-        gather {
+        supply {
             my (@, @ipv6-solutions) := take-a-hint $family, $type, $protocol;
             for await self.query: $host, C_IN, T_AAAA -> IO::Address::IPv6:D $address {
                 for @ipv6-solutions -> ($type, $protocol) {
-                    take $address.new: $port, :$type, :$protocol;
+                    emit $address.new: $port, :$type, :$protocol;
                 }
             }
         }
@@ -124,77 +124,99 @@ my class IO::Resolver {
         PF_UNSPEC         :$family   = PF_UNSPEC;;
         AddressType:D     :$type     = SOCK_ANY,
         AddressProtocol:D :$protocol = IPPROTO_ANY
-        --> Iterable:D
+        --> Supply:D
     ) {
         # Implementation of RFC8305 (Happy Eyeballs v2):
-        my (@ipv4-solutions, @ipv6-solutions) := take-a-hint $family, $type, $protocol;
-        gather {
-            my Queue:D                   $queue     := nqp::create(Queue);
-            my Bool:D                    $init      := False;
-            my Lock:D                    $init_lock := Lock.new;
-            my Lock::ConditionVariable:D $init_cond := $init_lock.condition;
-
-            my &try-to-proceed := {
-                unless $init {
-                    $init := True;
-                    $init_cond.signal;
-                }
-            };
-
-            $init_lock.lock;
-            $*SCHEDULER.cue({
-                # Begin by making an AAAA query followed by an A query,
-                # in parallel, as closely together as we can:
-                await start for await self.query: $host, C_IN, T_AAAA -> IO::Address::IPv6:D $peer is copy {
-                    # If an IPv6 address was the first address
-                    # received, then go ahead with connecting now:
-                    FIRST try-to-proceed;
-
-                    # Push our address pair to the queue:
-                    $peer .= new: $port;
-                    my IO::Address::IPv6:_ $source = try get-source-for $peer;
-                    nqp::push($queue, AddressPair.new: :$source, :$peer, :!upgraded);
-                }, start for await self.query: $host, C_IN, T_A -> IO::Address::IPv4:D $peer is copy {
-                    # If the first address we wind up receiving is an
-                    # IPv4 one, then await the recommended resolution
-                    # delay of 50ms before proceeding to connect with
-                    # any addresses received during that point, so
-                    # long as they're all IPv4 addresses:
-                    FIRST $*SCHEDULER.cue: &try-to-proceed, in => 0.050 unless $init;
-
-                    # Push our address pair to the queue:
-                    $peer .= new: $port;
-                    with try get-source-for $peer -> IO::Address::IPv4:D $source {
-                        nqp::push($queue, AddressPair.new: :source($source.upgrade), :peer($peer.upgrade), :upgraded);
-                    } else {
-                        nqp::push($queue, AddressPair.new: :peer($peer.upgrade), :upgraded);
+        supply {
+            # Begin by making an AAAA query followed by an A query,
+            # in parallel, as closely together as we can:
+            my (@ipv4-solutions, @ipv6-solutions) := take-a-hint $family, $type, $protocol;
+            my Queue:D   $queue                   := nqp::create(Queue);
+            my atomicint $init                     = 0;
+            my Promise:D $query-aaaa              := self.query: $host, C_IN, T_AAAA;
+            my Promise:D $query-a                 := self.query: $host, C_IN, T_A;
+            my Promise:D $done-aaaa               := Promise.new;
+            my Promise:D $done-a                  := Promise.new;
+            whenever $query-aaaa -> @addresses {
+                if cas $init, 0, 1 {
+                    # IPv4 addresses were received first, despite the
+                    # resolution delay. Proceed to sorting:
+                    for @addresses {
+                        my IO::Address::IPv6:D $peer   := .new: $port;
+                        my IO::Address::IPv6:_ $source := try get-source-for $peer;
+                        nqp::push($queue, AddressPair.new: :$source, :$peer, :!upgraded);
                     }
-                };
-                LEAVE {
-                    # Mark the end of the queue:
-                    nqp::push($queue, AddressPair);
-                    # Ensure we can proceed to sort and connect:
-                    try-to-proceed;
+                } else {
+                    # IPv6 addresses were received first. Proceed to
+                    # connect with them:
+                    for @addresses -> IO::Address::IPv6:D $peer {
+                        for @ipv6-solutions -> ($type, $protocol) {
+                            emit $peer.new: $port, :$type, :$protocol;
+                        }
+                    }
                 }
-            });
-            $init_cond.wait;
-            $init_lock.unlock;
-
-            until (my AddressPair:_ $address := nqp::shift($queue)) =:= AddressPair {
-                take $address;
+                $done-aaaa.keep;
             }
-        }.sort(&address-sorter).map({
-            if .upgraded {
-                slip do for @ipv4-solutions -> ($type, $protocol) {
-                    .peer.downgrade.new: $port, :$type, :$protocol
+            whenever $query-a -> @addresses {
+                # If the first address we wind up receiving is an IPv4 one,
+                # then await the recommended resolution delay of 50ms. If any
+                # IPv6 addresses are received during that time, then proceed to
+                # connect with those first. Either way, IPv4 addresses wind up
+                # getting queued for sorting, if that ever happens.
+                if ⚛$init {
+                    for @addresses {
+                        my IO::Address::IPv4:D $peer := .new: $port;
+                        with try get-source-for $peer -> IO::Address::IPv4:D $source {
+                            nqp::push($queue,
+                              AddressPair.new: :source($source.upgrade), :peer($peer.upgrade), :upgraded);
+                        } else {
+                            nqp::push($queue,
+                              AddressPair.new: :peer($peer.upgrade), :upgraded);
+                        }
+                    }
+                    $done-a.keep;
+                }
+                else {
+                    whenever Promise.in(0.050) {
+                        cas $init, 0, 1;
+                        for @addresses {
+                            my IO::Address::IPv4:D $peer := .new: $port;
+                            with try get-source-for $peer -> IO::Address::IPv4:D $source {
+                                nqp::push($queue,
+                                  AddressPair.new: :source($source.upgrade), :peer($peer.upgrade), :upgraded);
+                            } else {
+                                nqp::push($queue,
+                                  AddressPair.new: :peer($peer.upgrade), :upgraded);
+                            }
+                        }
+                        $done-a.keep;
+                    }
                 }
             }
-            else {
-                slip do for @ipv6-solutions -> ($type, $protocol) {
-                    .peer.new: $port, :$type, :$protocol
+            whenever Promise.allof: $done-aaaa, $done-a {
+                # Signal the end of the queue:
+                nqp::push($queue, AddressPair);
+                # Sort the addresses, then emit the resulting addresses, completed with
+                # the family/type/protocol hints given:
+                for gather {
+                    until (my AddressPair:_ $pair := nqp::shift($queue)) =:= AddressPair {
+                        take $pair;
+                    }
+                }.sort(&address-sorter) -> AddressPair:D $pair {
+                    if $pair.upgraded {
+                        for @ipv4-solutions -> ($type, $protocol) {
+                            emit $pair.peer.downgrade.new: $port, :$type, :$protocol
+                        }
+                    }
+                    else {
+                        for @ipv6-solutions -> ($type, $protocol) {
+                            emit $pair.peer.new: $port, :$type, :$protocol
+                        }
+                    }
                 }
+                done;
             }
-        })
+        }
     }
 
     # Helper routine for getting any extra address information not included in
@@ -299,22 +321,21 @@ Rakudo::Internals.REGISTER-DYNAMIC: '$*RESOLVER', {
 }, '6.e';
 
 Rakudo::Internals.REGISTER-DYNAMIC: '&*CONNECT', {
-    PROCESS::<&CONNECT> := sub CONNECT(Iterable:D $addresses is raw, &callback --> Mu) {
-        my Mu          $result := Nil;
+    PROCESS::<&CONNECT> := sub CONNECT(Supply:D $addresses is raw, &callback --> Mu) {
+        my Promise:D   $result := Promise.new;
         my Exception:_ $error  := Exception;
-        for $addresses -> IO::Address:D $address {
+        $addresses.tap(-> IO::Address:D $address {
             # Connection attempts are made one at a time, separated by at least
             # 10ms, but never taking any longer than 250ms (a naive connection
-            # attempt delay):
+            # attempt delay). If we succeed within this time frame, we're done:
             await Promise.allof: Promise.anyof(start {
-                $result := try callback $address;
-                $error  := $!;
+                $result.keep: try callback $address;
+                $error := $!;
+                done without $!;
             }, Promise.in(0.250)), Promise.in(0.010);
-            # If we succeeded to connect with an address, ignore the remaining
-            # addresses:
-            last without $error;
-        }
-        $error.rethrow with $error;
-        $result
+        }, done => {
+            $result.break: $error with $error;
+        });
+        await $result
     };
 }, '6.e';

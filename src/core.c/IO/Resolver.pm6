@@ -7,9 +7,9 @@ my class IO::Resolver {
         SocketType:D     :$type     = SOCK_ANY,
         ProtocolType:D   :$protocol = IPPROTO_ANY,
         Bool:D           :$passive  = True,
-        --> Iterable:D
+        --> Supply:D
     ) {
-        gather for nqp::hllize(nqp::getaddrinfo(
+        supply for nqp::hllize(nqp::getaddrinfo(
             nqp::decont_s($host), nqp::decont_i($port),
             nqp::unbox_i($family.Int), nqp::unbox_i($type.Int), nqp::unbox_i($protocol.Int),
             nqp::unbox_i($passive.Int)))
@@ -23,8 +23,8 @@ my class IO::Resolver {
             };
 
             my $address := nqp::p6bindattrinvres(nqp::create(A), A, '$!VM-address', $VM-address);
-            nqp::bindattr($address, A, '$!info', IO::Address::Info.new: SocketType($type), ProtocolType($type));
-            take $address;
+            nqp::bindattr($address, A, '$!info', IO::Address::Info.new: SocketType($type), ProtocolType($protocol));
+            emit $address;
         }
     }
 }
@@ -34,7 +34,7 @@ Rakudo::Internals.REGISTER-DYNAMIC: '$*RESOLVER', {
 };
 
 Rakudo::Internals.REGISTER-DYNAMIC: '&*CONNECT', {
-    PROCESS::<&CONNECT> := sub CONNECT(Iterable:D $addresses is raw, &callback --> Mu) {
-        callback $addresses.head
+    PROCESS::<&CONNECT> := sub CONNECT(Supply:D $addresses, &callback --> Mu) {
+        callback await $addresses.head
     };
 };

@@ -123,13 +123,13 @@ my class IO::Socket::INET does IO::Socket {
                     nqp::unbox_i($!backlog || 128));
             }
             else {
-                my Iterable:D $addresses := $*RESOLVER.resolve:
+                &*CONNECT($*RESOLVER.resolve(
                     $!localhost || '0.0.0.0', $!localport || 0,
                     family   => ProtocolFamily($!family),
                     type     => SocketType($!type),
                     protocol => ProtocolType($!proto),
-                    passive  => True;
-                &*CONNECT($addresses, sub (IO::Address:D $address) {
+                    passive  => True,
+                ), sub (IO::Address:D $address) {
                     nqp::bindsock($PIO,
                         nqp::unbox_i(+$address.family), nqp::unbox_i(+$address.type), nqp::unbox_i(+$address.protocol),
                         nqp::getattr(nqp::decont($address), $address.WHAT, '$!VM-address'),
@@ -156,13 +156,13 @@ my class IO::Socket::INET does IO::Socket {
                 nqp::getattr($address, $address.WHAT, '$!VM-address'));
         }
         elsif $!type == nqp::const::ADDRESS_TYPE_STREAM {
-            my Iterable:D $addresses := $*RESOLVER.resolve:
+            &*CONNECT($*RESOLVER.resolve(
                 $!host, $!port,
                 family   => ProtocolFamily($!family),
                 type     => SocketType($!type),
                 protocol => ProtocolType($!proto),
-                passive  => True; # For the sake of compatibility with older compiler releases.
-            &*CONNECT($addresses, sub (IO::Address:D $address) {
+                passive  => True, # For the sake of compatibility with older compiler releases.
+            ), sub (IO::Address:D $address) {
                 nqp::connect($PIO,
                     nqp::unbox_i(+$address.family), nqp::unbox_i(+$address.type), nqp::unbox_i(+$address.protocol),
                     nqp::getattr(nqp::decont($address), $address.WHAT, '$!VM-address'))
