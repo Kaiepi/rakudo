@@ -180,12 +180,12 @@ my class IO::Socket::Async {
             type     => SOCK_STREAM,
             protocol => IPPROTO_TCP,
             passive  => True, # For the sake of compatibility with older compiler releases.
-        ), sub (IO::Address:D $address) {
+        ), sub (IO::Address::Info:D $info) {
             my Encoding:D $encoding := Encoding::Registry.find($enc);
             my Promise:D  $p        := Promise.new;
             my            $v         = $p.vow;
             nqp::asyncconnect(
-              nqp::getattr(nqp::decont($address), $address.WHAT, '$!VM-address'),
+              nqp::getattr($info.address, $info.address.WHAT, '$!VM-address'),
               $scheduler.queue,
               -> Mu \socket, Mu \err, Mu \peer-host, Mu \peer-port, Mu \socket-host, Mu \socket-port {
                   if err {
@@ -246,7 +246,7 @@ my class IO::Socket::Async {
                 type     => SOCK_STREAM,
                 protocol => IPPROTO_TCP,
                 passive  => True,
-            ), sub (IO::Address:D $address) {
+            ), sub (IO::Address::Info:D $info) {
                 my Lock::Async:D $lock        := Lock::Async.new;
                 my Tap:_         $tap;
                 my int           $finished     = 0;
@@ -258,7 +258,7 @@ my class IO::Socket::Async {
                 my               $port-vow    := $socket-port.vow;
                 $lock.protect: {
                     my $cancellation := nqp::asynclisten(
-                      nqp::getattr(nqp::decont($address), $address.WHAT, '$!VM-address'),
+                      nqp::getattr($info.address, $info.address.WHAT, '$!VM-address'),
                       $!backlog,
                       $!scheduler.queue(:hint-affinity),
                       -> Mu \client-socket, Mu \err, Mu \peer-host, Mu \peer-port,
@@ -376,12 +376,12 @@ my class IO::Socket::Async {
             type     => SOCK_DGRAM,
             protocol => IPPROTO_UDP,
             passive  => True
-        ), sub (IO::Address:D $address) {
+        ), sub (IO::Address::Info:D $info) {
             my Encoding:D $encoding := Encoding::Registry.find($enc);
             my Promise:D  $p        := Promise.new;
             my            $v        := $p.vow;
             nqp::asyncudp(
-              nqp::getattr(nqp::decont($address), $address.WHAT, '$!VM-address'),
+              nqp::getattr($info.address, $info.address.WHAT, '$!VM-address'),
               $broadcast ?? 1 !! 0,
               $scheduler.queue(:hint-affinity),
               -> Mu \socket, Mu \err {
@@ -417,12 +417,12 @@ my class IO::Socket::Async {
             type     => SOCK_DGRAM,
             protocol => IPPROTO_UDP,
             passive  => True, # For the sake of compatibility with older compiler releases.
-        ), sub (IO::Address:D $address) {
+        ), sub (IO::Address::Info:D $info) {
             my Promise:D  $p := Promise.new;
             my            $v := $p.vow;
             nqp::asyncwritebytesto(
               $!VMIO,
-              nqp::getattr(nqp::decont($address), $address.WHAT, '$!VM-address'),
+              nqp::getattr($info.address, $info.address.WHAT, '$!VM-address'),
               nqp::decont($b),
               $scheduler.queue,
               -> Mu \bytes, Mu \err {

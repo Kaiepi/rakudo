@@ -95,8 +95,9 @@ my class IO::Resolver {
         supply {
             my (@ipv4-solutions, @) := take-a-hint $family, $type, $protocol;
             for await self.query: $host, C_IN, T_A -> IO::Address::IPv4:D $address {
+                my IO::Address::IPv4:D $result := $address.new: $port;
                 for @ipv4-solutions -> ($type, $protocol) {
-                    emit $address.new: $port, :$type, :$protocol;
+                    emit IO::Address::Info.new: $result, :$type, :$protocol;
                 }
             }
         }
@@ -112,8 +113,9 @@ my class IO::Resolver {
         supply {
             my (@, @ipv6-solutions) := take-a-hint $family, $type, $protocol;
             for await self.query: $host, C_IN, T_AAAA -> IO::Address::IPv6:D $address {
+                my IO::Address::IPv6:D $result := $address.new: $port;
                 for @ipv6-solutions -> ($type, $protocol) {
-                    emit $address.new: $port, :$type, :$protocol;
+                    emit IO::Address::Info.new: $result, :$type, :$protocol;
                 }
             }
         }
@@ -149,9 +151,10 @@ my class IO::Resolver {
                 } else {
                     # IPv6 addresses were received first. Proceed to
                     # connect with them:
-                    for @addresses -> IO::Address::IPv6:D $peer {
+                    for @addresses -> IO::Address::IPv6:D $address {
+                        my IO::Address::IPv6:D $result := $address.new: $port;
                         for @ipv6-solutions -> ($type, $protocol) {
-                            emit $peer.new: $port, :$type, :$protocol;
+                            emit IO::Address::Info.new: $result, :$type, :$protocol;
                         }
                     }
                 }
@@ -205,12 +208,12 @@ my class IO::Resolver {
                 }.sort(&address-sorter) -> AddressPair:D $pair {
                     if $pair.upgraded {
                         for @ipv4-solutions -> ($type, $protocol) {
-                            emit $pair.peer.downgrade.new: $port, :$type, :$protocol
+                            emit IO::Address::Info.new: $pair.peer.downgrade, :$type, :$protocol
                         }
                     }
                     else {
                         for @ipv6-solutions -> ($type, $protocol) {
-                            emit $pair.peer.new: $port, :$type, :$protocol
+                            emit IO::Address::Info.new: $pair.peer, :$type, :$protocol
                         }
                     }
                 }
@@ -324,14 +327,16 @@ Rakudo::Internals.REGISTER-DYNAMIC: '&*CONNECT', {
     PROCESS::<&CONNECT> := sub CONNECT(Supply:D $addresses is raw, &callback --> Mu) {
         my Promise:D   $result := Promise.new;
         my Exception:_ $error  := Exception;
-        $addresses.tap(-> IO::Address:D $address {
+        $addresses.tap(-> IO::Address::Info:D $info {
             # Connection attempts are made one at a time, separated by at least
             # 10ms, but never taking any longer than 250ms (a naive connection
             # attempt delay). If we succeed within this time frame, we're done:
             await Promise.allof: Promise.anyof(start {
-                $result.keep: try callback $address;
-                $error := $!;
-                done without $!;
+                $result.keep: callback $info;
+                done;
+                CATCH { default {
+                    $error := $_;
+                } }
             }, Promise.in(0.250)), Promise.in(0.010);
         }, done => {
             $result.break: $error with $error;

@@ -2,35 +2,23 @@ role  IO::Address       { ... }
 class IO::Address::IPv6 { ... }
 
 class IO::Address::Info {
+    has IO::Address:D  $.address  is required is built(:bind);
     has SocketType:D   $.type     is required;
     has ProtocolType:D $.protocol is required;
 
-    method new(::?CLASS:_: SocketType:D $type, ProtocolType:D $protocol --> ::?CLASS:D) {
-        nqp::create(self)!SET-SELF($type, $protocol)
+    method new(::?CLASS:_: IO::Address:D $address, *%rest --> ::?CLASS:D) {
+        self.bless: :$address, |%rest
     }
-    method !SET-SELF(::?CLASS:D: $type, $protocol) {
-        $!type     := $type;
-        $!protocol := $protocol;
-        self
-    }
+
+    method family(::?CLASS:D: --> ProtocolFamily:D) { $!address.family }
 }
 
 role IO::Address[ProtocolFamily:D $family] {
-    has Mu                  $!VM-address is required;
-    has IO::Address::Info:_ $.info;
+    has Mu $!VM-address is required;
 
-    proto method new(::?ROLE:_: +, SocketType:_ :$type, ProtocolType:_ :$protocol --> ::?ROLE:D) {
-        {*}!SET-SELF($type, $protocol)
-    }
-    method !SET-SELF(::?ROLE:D: $type, $protocol) {
-        return self unless $type.DEFINITE && $protocol.DEFINITE;
-        nqp::p6bindattrinvres(self, $?CLASS, '$!info', IO::Address::Info.new: $type, $protocol)
-    }
+    proto method new(::?ROLE:_: | --> ::?ROLE:D) {*}
 
     method family(::?CLASS:_: --> ProtocolFamily:D) { $family }
-    method type(::?CLASS:D: --> SocketType:_)       { self.has-info ?? $!info.type !! Nil }
-    method protocol(::?CLASS:D: --> ProtocolType:_) { self.has-info ?? $!info.protocol !! Nil }
-    method has-info(::?CLASS:D: --> Bool:D)         { $!info.DEFINITE }
 
     multi method Str(::?CLASS:D: --> Str:D) { nqp::addrtopres($!VM-address) }
 }
@@ -44,17 +32,11 @@ class IO::Address::UNIX does IO::Address[PF_UNIX] {
         nqp::p6bindattrinvres(nqp::create(self), $?CLASS, '$!VM-address',
           nqp::addrfrompath(nqp::decont_s($path)));
     }
-    multi method new(::?CLASS:D: ::?CLASS:D $address) {
-        $address.clone
-    }
 
     multi method gist(::?CLASS:D: --> Str:D) { self.Str }
 
     multi method raku(::?CLASS:D: --> Str:D) {
-        my Str:D $raku = "IO::Address::UNIX.new($.Str.raku()";
-        $raku ~= ", type => $!info.type.raku(), protocol => $!info.protocol.raku()" with $!info;
-        $raku ~= ')';
-        $raku
+        "IO::Address::UNIX.new($.Str.raku())";
     }
 }
 
@@ -84,10 +66,10 @@ class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
     # are deprecated.
     proto method upgrade(::?CLASS:D: --> IO::Address::IPv6:D) {*}
     multi method upgrade(::?CLASS:D $self: Bool:D :compatible($)! where ?*) {
-        IO::Address::IPv6.new: "::$self", $.port, :$.type, :$.protocol
+        IO::Address::IPv6.new: "::$self", $.port
     }
     multi method upgrade(::?CLASS:D $self: Bool:D :compatible($) = False) {
-        IO::Address::IPv6.new: "::FFFF:$self", $.port, :$.type, :$.protocol
+        IO::Address::IPv6.new: "::FFFF:$self", $.port
     }
 
     multi method gist(::?CLASS:D $self: --> Str:D) { "$self:$.port" }
@@ -96,7 +78,6 @@ class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
         my Int:D $port = $.port;
         my Str:D $raku = "IO::Address::IPv4.new($.Str.raku()";
         $raku ~= ", $port.raku()" unless $port == 0;
-        $raku ~= ", type => $!info.type.raku(), protocol => $!info.protocol.raku()" with $!info;
         $raku ~= ')';
         $raku
     }
@@ -184,7 +165,7 @@ class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
         # TODO: Typed exception.
         X::AdHoc.new(payload => "IPv6 address '$self' cannot be downgraded to IPv4").throw
             unless $raw-address[0..9].all == 0 && $raw-address[10..11].all == 0x00 | 0xFF;
-        IO::Address::IPv4.new: $raw-address.subbuf(12, 4), $.port, :$.type, :$.protocol
+        IO::Address::IPv4.new: $raw-address.subbuf(12, 4), $.port
     }
 
     multi method gist(::?CLASS:D $self: --> Str:D) { "[$self]:$.port" }
@@ -197,8 +178,7 @@ class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
         $raku ~= ", $port.raku()" unless $port == 0;
         $raku ~= ", flowinfo => $flowinfo.raku()" unless $flowinfo == 0;
         $raku ~= ", scope-id => $scope-id.raku()" unless $scope-id == 0;
-        $raku ~= ", type => $!info.type.raku(), protocol => $!info.protocol.raku()" with $!info;
-        $raku ~= ')';
+        $raku ~= ")";
         $raku
     }
 }

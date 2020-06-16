@@ -129,10 +129,10 @@ my class IO::Socket::INET does IO::Socket {
                     type     => SocketType($!type),
                     protocol => ProtocolType($!proto),
                     passive  => True,
-                ), sub (IO::Address:D $address) {
+                ), sub (IO::Address::Info:D $info) {
                     nqp::bindsock($PIO,
-                        nqp::unbox_i(+$address.family), nqp::unbox_i(+$address.type), nqp::unbox_i(+$address.protocol),
-                        nqp::getattr(nqp::decont($address), $address.WHAT, '$!VM-address'),
+                        nqp::unbox_i(+$info.family), nqp::unbox_i(+$info.type), nqp::unbox_i(+$info.protocol),
+                        nqp::getattr($info.address, $info.address.WHAT, '$!VM-address'),
                         nqp::unbox_i($!backlog || 128))
                 });
             }
@@ -162,10 +162,10 @@ my class IO::Socket::INET does IO::Socket {
                 type     => SocketType($!type),
                 protocol => ProtocolType($!proto),
                 passive  => True, # For the sake of compatibility with older compiler releases.
-            ), sub (IO::Address:D $address) {
+            ), sub (IO::Address::Info:D $info) {
                 nqp::connect($PIO,
-                    nqp::unbox_i(+$address.family), nqp::unbox_i(+$address.type), nqp::unbox_i(+$address.protocol),
-                    nqp::getattr(nqp::decont($address), $address.WHAT, '$!VM-address'))
+                    nqp::unbox_i(+$info.family), nqp::unbox_i(+$info.type), nqp::unbox_i(+$info.protocol),
+                    nqp::getattr($info.address, $info.address.WHAT, '$!VM-address'))
             });
         }
 
