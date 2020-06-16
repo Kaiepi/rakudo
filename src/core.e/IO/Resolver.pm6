@@ -238,7 +238,7 @@ my class IO::Resolver {
             when SOCK_DGRAM  { $mask +|= 0b0000100 }
             when SOCK_STREAM { $mask +|= 0b0001000 }
             when SOCK_RAW    { $mask +|= 0b0010000 }
-            when SOCK_ANY    { $mask +|= 0b0011100 }
+            when SOCK_ANY    { $mask +|= 0b0001100 }
         }
         given $protocol { # Bits 1-2:
             when IPPROTO_UDP { $mask +|= 0b0000001 }
