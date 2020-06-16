@@ -28,6 +28,9 @@ my class Signature { # declared in BOOTSTRAP
     multi method ACCEPTS(Signature:D: Mu \topic) {
         nqp::hllbool(nqp::istrue(try self.ACCEPTS: topic.Capture))
     }
+    multi method ACCEPTS(Signature:D \SELF: Junction:D \topic) {
+        topic.THREAD: { SELF.ACCEPTS: $_ }
+    }
     multi method ACCEPTS(Signature:D: Capture $topic) {
         nqp::hllbool(nqp::p6isbindable(self, nqp::decont($topic)));
     }
