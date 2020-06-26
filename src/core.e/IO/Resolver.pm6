@@ -205,22 +205,34 @@ my class IO::Resolver {
 
             # Implementation of RFC8305 (Happy Eyeballs v2):
 
+            # Queue up addresses to be sorted before connection attempts should
+            # proceed:
+            my Supplier:D $queue := Supplier.new;
+            whenever $queue.Supply.sort({ self!compare-address-pairs: $^a, $^b }) -> AddressPair:D $pair {
+                if $pair.upgraded {
+                    for @ipv4-solutions -> ($type, $protocol) {
+                        emit IO::Address::Info.new: $pair.peer.downgrade, :$type, :$protocol
+                    }
+                }
+                else {
+                    for @ipv6-solutions -> ($type, $protocol) {
+                        emit IO::Address::Info.new: $pair.peer, :$type, :$protocol
+                    }
+                }
+            }
+
             # Make an AAAA query followed by an A query, in parallel, as
             # closely together as we can:
-            my Queue:D   $queue      := nqp::create(Queue);
-            my atomicint $init        = 0;
-            my Promise:D $done-aaaa  := Promise.new;
-            my Promise:D $done-a     := Promise.new;
-            my Promise:D $query-aaaa := self.query: $host, C_IN, T_AAAA;
-            my Promise:D $query-a    := self.query: $host, C_IN, T_A;
-            whenever $query-aaaa -> @addresses {
-                if cas $init, 0, 1 {
+            my atomicint $start = 0;
+            my atomicint $end   = 0;
+            whenever self.query: $host, C_IN, T_AAAA -> @addresses is raw {
+                if cas $start, 0, 1 {
                     # IPv4 addresses were received first, despite the
                     # resolution delay. Proceed to sorting:
                     for @addresses {
                         my IO::Address::IPv6:D $peer   := .new: $port;
                         my IO::Address::IPv6:_ $source := try get-source-for $peer;
-                        nqp::push($queue, AddressPair.new: :$source, :$peer, :!upgraded);
+                        $queue.emit: AddressPair.new: :$source, :$peer, :!upgraded;
                     }
                 } else {
                     # IPv6 addresses were received first. Proceed to
@@ -232,55 +244,25 @@ my class IO::Resolver {
                         }
                     }
                 }
-                $done-aaaa.keep;
+                $queue.done if cas $end, 0, 1;
             }
-            whenever $query-a -> @addresses {
+            whenever self.query: $host, C_IN, T_A -> @addresses is raw {
                 # If the first address we wind up receiving is an IPv4 one,
                 # then await the recommended resolution delay of 50ms. If any
                 # IPv6 addresses are received during that time, then proceed to
                 # connect with those first. Either way, IPv4 addresses wind up
                 # getting queued for sorting, if that ever happens.
-                if ⚛$init {
-                    for @addresses {
-                        my IO::Address::IPv4:D $peer   = .new: $port;
-                        my IO::Address::IPv4:_ $source = try get-source-for $peer;
-                        nqp::push($queue, AddressPair.new: :source($source.?upgrade), :peer($peer.upgrade), :upgraded);
-                    }
-                    $done-a.keep;
+                unless ⚛$start {
+                    await Promise.in(0.050) if @addresses;
+                    cas $start, 0, 1;
+                };
+                for @addresses {
+                    my IO::Address::IPv4:D $address := .new: $port;
+                    my IO::Address::IPv6:D $peer    := $address.upgrade;
+                    my IO::Address::IPv6:_ $source  := (try get-source-for $address).?upgrade // IO::Address::IPv6;
+                    $queue.emit: AddressPair.new: :$source, :$peer, :upgraded;
                 }
-                else {
-                    whenever Promise.in(0.050) {
-                        cas $init, 0, 1;
-                        for @addresses {
-                            my IO::Address::IPv4:D $peer   = .new: $port;
-                            my IO::Address::IPv4:_ $source = try get-source-for $peer;
-                            nqp::push($queue, AddressPair.new: :source($source.?upgrade), :peer($peer.upgrade), :upgraded);
-                        }
-                        $done-a.keep;
-                    }
-                }
-            }
-            whenever Promise.allof: $done-aaaa, $done-a {
-                # Mark the end of the queue, sort the addresses, then complete
-                # and emit the results:
-                nqp::push($queue, AddressPair);
-                for sort { self!compare-address-pairs: $^a, $^b }, gather {
-                    until (my AddressPair:_ $pair := nqp::shift($queue)) =:= AddressPair {
-                        take $pair;
-                    }
-                } -> AddressPair:D $pair {
-                    if $pair.upgraded {
-                        for @ipv4-solutions -> ($type, $protocol) {
-                            emit IO::Address::Info.new: $pair.peer.downgrade, :$type, :$protocol
-                        }
-                    }
-                    else {
-                        for @ipv6-solutions -> ($type, $protocol) {
-                            emit IO::Address::Info.new: $pair.peer, :$type, :$protocol
-                        }
-                    }
-                }
-                done;
+                $queue.done if cas $end, 0, 1;
             }
         }
     }
@@ -364,7 +346,7 @@ my class IO::Resolver {
         # Rule 6: Prefer higher precedence.
         my Order:D $precedence-cmp := reduce * cmp *, map {
             $!policy-table.lookup-precedence: .peer
-        }, $a, $b;
+        }, $b, $a;
         return $precedence-cmp if $precedence-cmp;
 
         # Rule 7: Prefer native transport.
