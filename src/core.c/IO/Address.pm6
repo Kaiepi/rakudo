@@ -19,8 +19,6 @@ role IO::Address[ProtocolFamily:D $family] {
     proto method new(::?ROLE:_: | --> ::?ROLE:D) {*}
 
     method family(::?CLASS:_: --> ProtocolFamily:D) { $family }
-
-    multi method Str(::?CLASS:D: --> Str:D) { nqp::addrtopres($!VM-address) }
 }
 
 class IO::Address::UNIX does IO::Address[PF_UNIX] {
@@ -33,6 +31,11 @@ class IO::Address::UNIX does IO::Address[PF_UNIX] {
           nqp::addrfrompath(nqp::decont_s($path)));
     }
 
+    multi method Stringy(::?CLASS:D: --> Stringy:D) { nqp::addrtopres($!VM-address) }
+    multi method Str(::?CLASS:D: --> Str:D)         { nqp::addrtopres($!VM-address) }
+
+    method IO(::?CLASS:D: --> IO::Path:D) { IO::Path.new: self.Str }
+
     multi method gist(::?CLASS:D: --> Str:D) { self.Str }
 
     multi method raku(::?CLASS:D: --> Str:D) {
@@ -40,9 +43,23 @@ class IO::Address::UNIX does IO::Address[PF_UNIX] {
     }
 }
 
-role IO::Address::IP {
+role IO::Address::IP is Cool {
+    has Int:_ $!native;
+
     method raw(::?CLASS:D: --> Blob:D) { ... }
     method port(::?CLASS:D: --> Int:D) { ... }
+
+    multi method Numeric(::?CLASS:D: --> Numeric:D) {
+        $!native // ($!native := self.raw.contents.reduce: * +< 8 +| *)
+    }
+    multi method Int(::?CLASS:D: --> Int:D) {
+        $!native // ($!native := self.raw.contents.reduce: * +< 8 +| *)
+    }
+
+    # XXX: Adding these stubs causes an error to be thrown while compiling the
+    # setting.
+    # multi method Stringy(::?CLASS:D: --> Stringy:D) { ... }
+    # multi method Str(::?CLASS:D: --> Str:D)         { ... }
 }
 
 class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
@@ -71,6 +88,9 @@ class IO::Address::IPv4 does IO::Address[PF_INET] does IO::Address::IP {
     multi method upgrade(::?CLASS:D $self: Bool:D :compatible($) = False) {
         IO::Address::IPv6.new: "::FFFF:$self", $.port
     }
+
+    multi method Stringy(::?CLASS:D: --> Stringy:D) { nqp::addrtopres($!VM-address) }
+    multi method Str(::?CLASS:D: --> Str:D)         { nqp::addrtopres($!VM-address) }
 
     multi method gist(::?CLASS:D $self: --> Str:D) { "$self:$.port" }
 
@@ -167,6 +187,9 @@ class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
             unless $raw-address[0..9].all == 0 && $raw-address[10..11].all == 0x00 | 0xFF;
         IO::Address::IPv4.new: $raw-address.subbuf(12, 4), $.port
     }
+
+    multi method Stringy(::?CLASS:D: --> Stringy:D) { nqp::addrtopres($!VM-address) }
+    multi method Str(::?CLASS:D: --> Str:D)         { nqp::addrtopres($!VM-address) }
 
     multi method gist(::?CLASS:D $self: --> Str:D) { "[$self]:$.port" }
 

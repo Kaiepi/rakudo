@@ -13,12 +13,12 @@ my class IO::Resolver {
     my class Context is repr('Resolver') { }
 
     my class Policy {
-        has Int:D $.prefix     is required where 0..^1 +< 129;
-        has Int:D $.length     is required where 0..128;
-        has Int:D $.label      is required;
-        has Int:D $.precedence is required;
+        has IO::Address::IPv6:D $.prefix     is required;
+        has Int:D               $.length     is required where 0..128;
+        has Int:D               $.label      is required;
+        has Int:D               $.precedence is required;
 
-        method matches(::?CLASS:D: Int:D $native-address where 0..^1 +< 129 --> Bool:D) {
+        method matches(::?CLASS:D: IO::Address::IPv6:D $native-address --> Bool:D) {
             $native-address +& ((1 +< 129 - 1) +^ (1 +< (128 - $!length) - 1)) == $!prefix
         }
     }
@@ -28,8 +28,7 @@ my class IO::Resolver {
 
         submethod BUILD(::?CLASS:D: :@policies! --> Nil) {
             @!policies = @policies.map(-> (Str:D $presentation, Int:D $length where 0..128, Int:D $label, Int:D $precedence) {
-                my IO::Address::IPv6:D $address := IO::Address::IPv6.new: $presentation;
-                my Int:D               $prefix  := $address.raw.contents.reduce: * +< 8 +| *;
+                my IO::Address::IPv6:D $prefix := IO::Address::IPv6.new: $presentation;
                 Policy.new: :$prefix, :$length, :$label, :$precedence
             });
         }
@@ -39,14 +38,12 @@ my class IO::Resolver {
         }
 
         method lookup-label(::?CLASS:D: IO::Address::IPv6:D $address --> Int:D) {
-            my Int:D    $native-address := $address.raw.contents.reduce: * +< 8 +| *;
-            my Policy:D @matches         = @!policies.grep: *.matches: $native-address;
+            my Policy:D @matches = @!policies.grep: *.matches: $address;
             @matches ?? @matches».label.max !! 1
         }
 
         method lookup-precedence(::?CLASS:D: IO::Address::IPv6:D $address --> Int:D) {
-            my Int:D    $native-address := $address.raw.contents.reduce: * +< 8 +| *;
-            my Policy:D @matches         = @!policies.grep: *.matches: $native-address;
+            my Policy:D @matches = @!policies.grep: *.matches: $address;
             @matches ?? @matches».precedence.max !! 1
         }
     }
