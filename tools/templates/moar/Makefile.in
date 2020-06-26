@@ -28,7 +28,8 @@ R_SETTING_MOAR = RESTRICTED.setting.moarvm
 	@bpm(CCINC)@@nfpq(@bpm(INCPATH)@/sha1)@ \
 	@bpm(CCINC)@@nfpq(@bpm(INCPATH)@/tinymt)@ \
 	@bpm(CCINC)@@nfpq(@bpm(INCPATH)@/libtommath)@ \
-	@bpm(CCINC)@@nfpq(@bpm(INCPATH)@/libuv)@
+	@bpm(CCINC)@@nfpq(@bpm(INCPATH)@/libuv)@ \
+	@bpm(CCINC)@@nfpq(@bpm(INCPATH)@/c-ares)@
 
 @bpv(RAKU)@ = raku@moar::exe@
 @bpv(RAKU_DEBUG)@ = raku-debug@moar::exe@
