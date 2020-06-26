@@ -19,8 +19,7 @@ my class IO::Resolver {
         has Int:D $.precedence is required;
 
         method matches(::?CLASS:D: Int:D $native-address where 0..^1 +< 129 --> Bool:D) {
-            my Int:D $mask := $!prefix ?? $!prefix +< (128 - $!length) !! (1 +< $!length + 1) - 1;
-            $native-address +& $mask == $native-address
+            $native-address +& ((1 +< 129 - 1) +^ (1 +< (128 - $!length) - 1)) == $!prefix
         }
     }
 
@@ -30,7 +29,7 @@ my class IO::Resolver {
         submethod BUILD(::?CLASS:D: :@policies! --> Nil) {
             @!policies = @policies.map(-> (Str:D $presentation, Int:D $length where 0..128, Int:D $label, Int:D $precedence) {
                 my IO::Address::IPv6:D $address := IO::Address::IPv6.new: $presentation;
-                my Int:D               $prefix  := $address.raw.contents.reduce(* +< 8 +| *) +> (128 - $length);
+                my Int:D               $prefix  := $address.raw.contents.reduce: * +< 8 +| *;
                 Policy.new: :$prefix, :$length, :$label, :$precedence
             });
         }
