@@ -2,7 +2,7 @@ role  IO::Address       { ... }
 class IO::Address::IPv6 { ... }
 
 class IO::Address::Info {
-    has IO::Address:D  $.address  is required is built(:bind);
+    has IO::Address:D  $.address  is required;
     has SocketType:D   $.type     is required;
     has ProtocolType:D $.protocol is required;
 
