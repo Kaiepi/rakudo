@@ -143,25 +143,30 @@ class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
     method flowinfo(::?CLASS:D: --> Int:D) { nqp::addrflowinfo($!VM-address) }
     method scope-id(::?CLASS:D: --> Int:D) { nqp::addrscopeid($!VM-address) }
 
-    method is-unicast(::?CLASS:D: --> Bool:D)   { self.raw.[0] != 0xFF }
-    method is-multicast(::?CLASS:D: --> Bool:D) { self.raw.[0] == 0xFF }
+    method is-unicast(::?CLASS:D: --> Bool:D)   { self +> 124 != 0xFF }
+    method is-multicast(::?CLASS:D: --> Bool:D) { self +> 124 == 0xFF }
 
     my subset Scope of Int:D where 0x0..0xF;
     method scope(::?CLASS:D: --> Scope) {
-        my blob8:D $raw-address := self.raw;
-        # If the address is multicast, then the scope is whatever bits 13-16 are:
-        return $raw-address[1] +& 0x0F if $raw-address[0] == 0xFF;
-        # If bits 1-10 are 1111111010 and bits 11-64 are all 0, then this is a
-        # unicast link-local address:
-        return 0x2 if $raw-address[0] == 0xFE
-                   && $raw-address[1] +& 0xC0 == 0x80
-                   && $raw-address[2..7].all == 0;
-        # If bits 1-10 are 1111111011, then this is a unicast site-local
-        # address:
-        return 0x4 if $raw-address[0] == 0xFE
-                   && $raw-address[1] +& 0xC0 == 0xC0;
-        # Otherwise, this is a unicast global address:
-        0xE
+        nqp::stmts(
+          (my int $upper-dword = self +> 64),
+          # If the address is multicast, then the scope is whatever bits 13-16
+          # are:
+          nqp::if(
+            ($upper-dword +& 0xFF00000000000000 == 0xFF00000000000000),
+            ($upper-dword +& 0x000F000000000000),
+            # If bits 1-10 are 1111111010 and bits 11-64 are all 0, then this
+            # is a unicast link-local address:
+            nqp::if(
+              ($upper-dword +& 0xFFC0FFFFFFFFFFFF == 0xFE80000000000000),
+              0x2,
+              # If bits 1-10 are 1111111011, then this is a unicast site-local
+              # address:
+              nqp::if(
+                ($upper-dword +& 0xFFC0000000000000 == 0xFEC0000000000000),
+                0x4,
+                # Otherwise, this is a unicast global address:
+                0xE))))
     }
 
     method is-interface-local(::?CLASS:D: --> Bool:D)    { self.scope == 0x1 }
@@ -171,14 +176,8 @@ class IO::Address::IPv6 does IO::Address[PF_INET6] does IO::Address::IP {
     method is-organization-local(::?CLASS:D: --> Bool:D) { self.scope == 0x8 }
     method is-global(::?CLASS:D: --> Bool:D)             { self.scope == 0xE }
 
-    method is-ipv4-compatible(::?CLASS:D: --> Bool:D) {
-        my blob8:D $raw-address := self.raw;
-        so $raw-address[0..11].all == 0
-    }
-    method is-ipv4-mapped(::?CLASS:D: --> Bool:D) {
-        my blob8:D $raw-address := self.raw;
-        so $raw-address[0..9].all == 0 && $raw-address[10..11].all == 0xFF
-    }
+    method is-ipv4-compatible(::?CLASS:D: --> Bool:D) { self +> 32 == 0 }
+    method is-ipv4-mapped(::?CLASS:D: --> Bool:D)     { self +> 32 +& 0xFFFF == 0xFFFF }
 
     method downgrade(::?CLASS:D $self: --> IO::Address::IPv4:D) {
         my blob8:D $raw-address := self.raw;
