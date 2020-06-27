@@ -219,18 +219,11 @@ my class IO::Resolver {
 
             # Make an AAAA query followed by an A query, in parallel, as
             # closely together as we can:
-            my atomicint $start = 0;
-            my atomicint $end   = 0;
-            whenever self.query: $host, C_IN, T_AAAA -> @addresses is raw {
-                if cas $start, 0, 1 {
-                    # IPv4 addresses were received first, despite the
-                    # resolution delay. Proceed to sorting:
-                    for @addresses {
-                        my IO::Address::IPv6:D $peer   := .new: $port;
-                        my IO::Address::IPv6:_ $source := try get-source-for $peer;
-                        $queue.emit: AddressPair.new: :$source, :$peer, :!upgraded;
-                    }
-                } else {
+            my Promise:D   $ipv6-answer := self.query: $host, C_IN, T_AAAA;
+            my Promise:D   $ipv4-answer := self.query: $host, C_IN, T_A;
+            my Semaphore:D $to-sort     := Semaphore.new: 1;
+            whenever $ipv6-answer -> @addresses is raw {
+                if $to-sort.try_acquire {
                     # IPv6 addresses were received first. Proceed to
                     # connect with them:
                     for @addresses -> IO::Address::IPv6:D $address {
@@ -239,26 +232,33 @@ my class IO::Resolver {
                             emit IO::Address::Info.new: $result, :$type, :$protocol;
                         }
                     }
+                } else {
+                    # IPv4 addresses were received first, despite the
+                    # resolution delay. Proceed to sorting:
+                    for @addresses {
+                        my IO::Address::IPv6:D $peer   := .new: $port;
+                        my IO::Address::IPv6:_ $source := try get-source-for $peer;
+                        $queue.emit: AddressPair.new: :$source, :$peer, :!upgraded;
+                    }
+                    $queue.done;
                 }
-                $queue.done if cas $end, 0, 1;
             }
-            whenever self.query: $host, C_IN, T_A -> @addresses is raw {
+            whenever $ipv4-answer -> @addresses is raw {
                 # If the first address we wind up receiving is an IPv4 one,
                 # then await the recommended resolution delay of 50ms. If any
                 # IPv6 addresses are received during that time, then proceed to
                 # connect with those first. Either way, IPv4 addresses wind up
                 # getting queued for sorting, if that ever happens.
-                unless ⚛$start {
-                    await Promise.in(0.050) if @addresses;
-                    cas $start, 0, 1;
-                };
-                for @addresses {
-                    my IO::Address::IPv4:D $address := .new: $port;
-                    my IO::Address::IPv6:D $peer    := $address.upgrade;
-                    my IO::Address::IPv6:_ $source  := (try get-source-for $address).?upgrade // IO::Address::IPv6;
-                    $queue.emit: AddressPair.new: :$source, :$peer, :upgraded;
+                whenever Promise.anyof: $ipv6-answer, Promise.in: 0.050 {
+                    my Bool:D $sorting := $to-sort.try_acquire;
+                    for @addresses {
+                        my IO::Address::IPv4:D $address := .new: $port;
+                        my IO::Address::IPv6:D $peer    := $address.upgrade;
+                        my IO::Address::IPv6:_ $source  := (try get-source-for $address).?upgrade // IO::Address::IPv6;
+                        $queue.emit: AddressPair.new: :$source, :$peer, :upgraded;
+                    }
+                    $queue.done unless $sorting;
                 }
-                $queue.done if cas $end, 0, 1;
             }
         }
     }
@@ -370,21 +370,21 @@ Rakudo::Internals.REGISTER-DYNAMIC: '$*RESOLVER', {
 Rakudo::Internals.REGISTER-DYNAMIC: '&*CONNECT', {
     PROCESS::<&CONNECT> := sub CONNECT(Supply:D $addresses is raw, &callback --> Mu) {
         my Promise:D   $result := Promise.new;
-        my Exception:_ $error  := Exception;
-        $addresses.tap(-> IO::Address::Info:D $info {
-            # Connection attempts are made one at a time, separated by at least
-            # 10ms, but never taking any longer than 250ms (a naive connection
-            # attempt delay). If we succeed within this time frame, we're done:
-            await Promise.allof: Promise.anyof(start {
+        my Exception:_ $error  := X::AdHoc.new: payload => "No addresses were received when resolving a hostname";
+        my Tap:D       $tap    := $addresses.tap(-> IO::Address::Info:D $info is raw {
+            my num $begin = nqp::time_n;
+            await Promise.anyof: start {
                 $result.keep: callback $info;
-                done;
+                $error := Exception;
                 CATCH { default {
                     $error := $_;
+                    await Promise.in: 0.100 - nqp::time_n + $begin;
                 } }
-            }, Promise.in(0.250)), Promise.in(0.010);
+            }, Promise.in: 2.000;
         }, done => {
             $result.break: $error with $error;
         });
+        LEAVE $tap.close;
         await $result
     };
 }, '6.e';
