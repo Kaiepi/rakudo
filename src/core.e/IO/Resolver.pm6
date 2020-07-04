@@ -60,67 +60,72 @@ my class IO::Resolver {
         $!policy-table := PolicyTable.new: @policies;
     }
 
-    my class Queue     is repr('ConcBlockingQueue') { }
-    my class AsyncTask is repr('AsyncTask')         { }
+    my class QueryTappable does Tappable {
+        my class AsyncTask is repr('AsyncTask') { }
 
-    proto method query(::?CLASS:D: Str:D, ::Class:D, ::Type:D --> Promise:D) {*}
+        has Context:D             $!context   is required is built(:bind);
+        has Str:D                 $!question  is required is built;
+        has IO::Resolver::Class:D $!class     is required is built;
+        has IO::Resolver::Type:D  $!type      is required is built;
+        has Scheduler:D           $!scheduler is required is built;
+        has                       &!process   is required is built;
+
+        method tap(::?CLASS:D: &emit, &done, &quit, &tap --> Tap:D) {
+            my AsyncTask:D $task := nqp::asyncdnsquery($!context,
+              nqp::decont_s($!question),
+              nqp::unbox_i($!class.value),
+              nqp::unbox_i($!type.value),
+              $!scheduler.queue(:hint-affinity),
+              -> Str:_ $error, \result {
+                  with $error {
+                      # TODO: Typed exception.
+                      quit X::AdHoc.new: payload => $error;
+                  }
+                  else {
+                      result.&!process.&emit;
+                      done;
+                  }
+              },
+              AsyncTask);
+
+            my Tap:D $tap := Tap.new({ nqp::cancel($task) });
+            tap $tap;
+            $tap
+        }
+
+        method live(::?CLASS:_: --> False)  { }
+        method serial(::?CLASS:_: --> True) { }
+        method sane(::?CLASS:_: --> True)   { }
+    }
+
+    proto method query(::?CLASS:D: Str:D, ::Class:D, ::Type:D --> Supply:D) {*}
     multi method query(
         ::?CLASS:D:
-        Str:D        $name,
+        Str:D        $question,
         ::Class:D    $class,
         T_A          $type;;
         Scheduler:D :$scheduler = $*SCHEDULER
-        --> Promise:D
+        --> Supply:D
     ) {
-        my Promise:D $p := Promise.new;
-        my           $v := $p.vow;
-        nqp::asyncdnsquery($!context,
-          nqp::decont_s($name),
-          nqp::unbox_i($class.value),
-          nqp::unbox_i($type.value),
-          $scheduler.queue,
-          -> Str:_ $error, @VM-addresses {
-              with $error {
-                  # TODO: Typed exception.
-                  $v.break: X::AdHoc.new: payload => $error;
-              }
-              else {
-                  $v.keep: @VM-addresses.map({
-                      nqp::p6bindattrinvres(nqp::create(IO::Address::IPv4), IO::Address::IPv4, '$!VM-address', $_)
-                  });
-              }
-          },
-          AsyncTask);
-        $p
+        Supply.new: QueryTappable.new:
+            :$!context, :$question, :$class, :$type, :$scheduler, process => -> @VM-addresses is raw {
+                do nqp::p6bindattrinvres(nqp::create(IO::Address::IPv4), IO::Address::IPv4, '$!VM-address', $_)
+                   for @VM-addresses
+            }
     }
     multi method query(
         ::?CLASS:D:
-        Str:D $name,
+        Str:D        $question,
         ::Class:D    $class,
         T_AAAA       $type;;
         Scheduler:D :$scheduler = $*SCHEDULER
-        --> Promise:D
+        --> Supply:D
     ) {
-        my Promise:D $p := Promise.new;
-        my           $v := $p.vow;
-        nqp::asyncdnsquery($!context,
-          nqp::decont_s($name),
-          nqp::unbox_i($class.value),
-          nqp::unbox_i($type.value),
-          $scheduler.queue,
-          -> Str:_ $error, @VM-addresses {
-              with $error {
-                  # TODO: Typed exception.
-                  $v.break: X::AdHoc.new: payload => $error;
-              }
-              else {
-                  $v.keep: @VM-addresses.map({
-                      nqp::p6bindattrinvres(nqp::create(IO::Address::IPv6), IO::Address::IPv6, '$!VM-address', $_)
-                  });
-              }
-          },
-          AsyncTask);
-        $p
+        Supply.new: QueryTappable.new:
+            :$!context, :$question, :$class, :$type, :$scheduler, process => -> @VM-addresses is raw {
+                do nqp::p6bindattrinvres(nqp::create(IO::Address::IPv6), IO::Address::IPv6, '$!VM-address', $_)
+                   for @VM-addresses
+            }
     }
 
     my subset AddressFamily   of ProtocolFamily:D where PF_UNSPEC | PF_INET | PF_INET6;
@@ -215,14 +220,15 @@ my class IO::Resolver {
                         emit IO::Address::Info.new: $pair.peer, :$type, :$protocol
                     }
                 }
+                done;
             }
 
-            # Make an AAAA query followed by an A query, in parallel, as
-            # closely together as we can:
-            my Promise:D   $ipv6-answer := self.query: $host, C_IN, T_AAAA;
-            my Promise:D   $ipv4-answer := self.query: $host, C_IN, T_A;
-            my Semaphore:D $to-sort     := Semaphore.new: 1;
-            whenever $ipv6-answer -> @addresses is raw {
+            # Make an AAAA query followed by an A query, as closely together as
+            # possible:
+            my Semaphore:D $to-sort    := Semaphore.new: 1;
+            my Supply:D    $aaaa-query := self.query: $host, C_IN, T_AAAA;
+            my Supply:D    $a-query    := self.query: $host, C_IN, T_A;
+            whenever $aaaa-query -> @addresses is raw {
                 if $to-sort.try_acquire {
                     # IPv6 addresses were received first. Proceed to
                     # connect with them:
@@ -243,13 +249,13 @@ my class IO::Resolver {
                     $queue.done;
                 }
             }
-            whenever $ipv4-answer -> @addresses is raw {
+            whenever $a-query -> @addresses is raw {
                 # If the first address we wind up receiving is an IPv4 one,
                 # then await the recommended resolution delay of 50ms. If any
                 # IPv6 addresses are received during that time, then proceed to
                 # connect with those first. Either way, IPv4 addresses wind up
                 # getting queued for sorting, if that ever happens.
-                whenever Promise.anyof: $ipv6-answer, Promise.in: 0.050 {
+                whenever Promise.anyof: $aaaa-query.Promise, Promise.in: 0.050 {
                     my Bool:D $sorting := $to-sort.try_acquire;
                     for @addresses {
                         my IO::Address::IPv4:D $address := .new: $port;
