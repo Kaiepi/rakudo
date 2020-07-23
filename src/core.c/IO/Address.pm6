@@ -53,3 +53,7 @@ my class IO::Address {
         }
     }
 }
+
+my class IO::Address::IP is IO::Address {
+    subset Port of Int:D where 0x0000..0xFFFF;
+}
