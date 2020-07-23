@@ -31,6 +31,7 @@ my class IO::Pipe          is RESTRICTED-CLASS { }
 my class IO::Address       is RESTRICTED-CLASS { }
 my class IO::Address::IP   is RESTRICTED-CLASS { }
 my class IO::Address::IPv4 is RESTRICTED-CLASS { }
+my class IO::Address::IPv6 is RESTRICTED-CLASS { }
 my class IO::Socket        is RESTRICTED-CLASS { }
 my class IO::Socket::INET  is RESTRICTED-CLASS { }
 my class NativeCall        is RESTRICTED-CLASS { }

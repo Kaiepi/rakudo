@@ -70,6 +70,19 @@ my class IO::Address::IPv4 is IO::Address::IP {
     method family(::?CLASS:_: --> PF_INET) { }
 }
 
+my class IO::Address::IPv6 is IO::Address::IP {
+    my constant Port = IO::Address::IP::Port;
+
+    proto method new(::?CLASS:_: | --> ::?CLASS:D) {*}
+    multi method new(::?CLASS:_: Str:D $literal, Port $port = 0 --> ::?CLASS:D) {
+        nqp::p6bindattrinvres(nqp::create(self), IO::Address, '$!VM-address',
+          nqp::addrfromstr_ip6(nqp::decont_s($literal), nqp::decont_i($port)))
+    }
+
+    method family(::?CLASS:_: --> PF_INET6) { }
+}
+
 BEGIN {
     IO::Address.^set_family_specialization: PF_INET, IO::Address::IPv4;
+    IO::Address.^set_family_specialization: PF_INET6, IO::Address::IPv6;
 }
