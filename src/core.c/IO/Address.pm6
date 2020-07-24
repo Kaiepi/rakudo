@@ -91,6 +91,10 @@ my class IO::Address::IPv6 is IO::Address::IP {
     }
 
     method family(::?CLASS:_: --> PF_INET6) { }
+
+    method scope-id(::?CLASS:D: --> Int:D) {
+        nqp::addrscopeid(nqp::getattr(self, IO::Address, '$!VM-address'))
+    }
 }
 
 my class IO::Address::UNIX is IO::Address {
