@@ -56,6 +56,9 @@ my class IO::Address {
 
 my class IO::Address::IP is IO::Address {
     subset Port of Int:D where 0x0000..0xFFFF;
+    method port(::?CLASS:D: --> Port) {
+        nqp::addrport(nqp::getattr(self, IO::Address, '$!VM-address'))
+    }
 
     method literal(::?CLASS:D: --> Str:D) {
         nqp::addrtostr(nqp::getattr(self, IO::Address, '$!VM-address'))
