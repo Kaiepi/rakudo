@@ -56,6 +56,14 @@ my class IO::Address {
 
 my class IO::Address::IP is IO::Address {
     subset Port of Int:D where 0x0000..0xFFFF;
+
+    method literal(::?CLASS:D: --> Str:D) {
+        nqp::addrtostr(nqp::getattr(self, IO::Address, '$!VM-address'))
+    }
+
+    multi method Str(::?CLASS:D: --> Str:D) { self.literal }
+
+    multi method Stringy(::?CLASS:D: --> Str:D) { self.literal }
 }
 
 my class IO::Address::IPv4 is IO::Address::IP {
@@ -90,6 +98,17 @@ my class IO::Address::UNIX is IO::Address {
     }
 
     method family(::?CLASS:_: --> PF_UNIX) { }
+
+    multi method Str(::?CLASS:D: --> Str:D) {
+        nqp::addrtostr(nqp::getattr(self, IO::Address, '$!VM-address'))
+    }
+
+    multi method Stringy(::?CLASS:D: --> Str:D) {
+        nqp::addrtostr(nqp::getattr(self, IO::Address, '$!VM-address'))
+    }
+
+    method path(::?CLASS:D: --> IO::Path:D) { IO::Path.new: self.Str }
+    method IO(::?CLASS:D: --> IO:D)         { self.path }
 }
 
 BEGIN {
