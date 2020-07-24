@@ -77,6 +77,10 @@ my class IO::Address::IPv4 is IO::Address::IP {
         nqp::p6bindattrinvres(nqp::create(self), IO::Address, '$!VM-address',
           nqp::addrfromstr_ip4(nqp::decont_s($literal), nqp::decont_i($port)))
     }
+    multi method new(::?CLASS:_: Blob:D $raw, Port $port = 0 --> ::?CLASS:D) {
+        nqp::p6bindattrinvres(nqp::create(self), IO::Address, '$!VM-address',
+          nqp::addrfrombuf_ip4(nqp::decont($raw), nqp::decont_i($port)))
+    }
 
     method family(::?CLASS:_: --> PF_INET) { }
 }
