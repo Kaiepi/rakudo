@@ -82,7 +82,18 @@ my class IO::Address::IPv6 is IO::Address::IP {
     method family(::?CLASS:_: --> PF_INET6) { }
 }
 
+my class IO::Address::UNIX is IO::Address {
+    proto method new(::?CLASS:_: | --> ::?CLASS:D) {*}
+    multi method new(::?CLASS:_: IO::Path:D $path --> ::?CLASS:D) {
+        nqp::p6bindattrinvres(nqp::create(self), IO::Address, '$!VM-address',
+          nqp::addrfromstr_un(nqp::unbox_s(~$path)))
+    }
+
+    method family(::?CLASS:_: --> PF_UNIX) { }
+}
+
 BEGIN {
     IO::Address.^set_family_specialization: PF_INET, IO::Address::IPv4;
     IO::Address.^set_family_specialization: PF_INET6, IO::Address::IPv6;
+    IO::Address.^set_family_specialization: PF_UNIX, IO::Address::UNIX;
 }
