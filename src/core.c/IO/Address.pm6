@@ -93,6 +93,10 @@ my class IO::Address::IPv6 is IO::Address::IP {
         nqp::p6bindattrinvres(nqp::create(self), IO::Address, '$!VM-address',
           nqp::addrfromstr_ip6(nqp::decont_s($literal), nqp::decont_i($port)))
     }
+    multi method new(::?CLASS:_: Blob:D $raw, Port $port = 0, UInt:D :$scope-id = 0 --> ::?CLASS:D) {
+        nqp::p6bindattrinvres(nqp::create(self), IO::Address, '$!VM-address',
+          nqp::addrfrombuf_ip6(nqp::decont($raw), nqp::decont_i($port), nqp::decont_i($scope-id)))
+    }
 
     method family(::?CLASS:_: --> PF_INET6) { }
 
