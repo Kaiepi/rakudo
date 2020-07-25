@@ -111,6 +111,10 @@ my class IO::Address::UNIX is IO::Address {
         nqp::p6bindattrinvres(nqp::create(self), IO::Address, '$!VM-address',
           nqp::addrfromstr_un(nqp::unbox_s(~$path)))
     }
+    multi method new(::?CLASS:_: Blob:D $raw --> ::?CLASS:D) {
+        nqp::p6bindattrinvres(nqp::create(self), IO::Address, '$!VM-address',
+          nqp::addrfrombuf_un(nqp::decont($raw)))
+    }
 
     method family(::?CLASS:_: --> PF_UNIX) { }
 
