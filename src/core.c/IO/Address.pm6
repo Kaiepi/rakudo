@@ -67,6 +67,10 @@ my class IO::Address::IP is IO::Address {
     multi method Str(::?CLASS:D: --> Str:D) { self.literal }
 
     multi method Stringy(::?CLASS:D: --> Str:D) { self.literal }
+
+    method raw(::?CLASS:D: Blob:U \T = blob8 --> Blob:D) {
+        nqp::addrtobuf(nqp::getattr(self, IO::Address, '$!VM-address'), T.^pun)
+    }
 }
 
 my class IO::Address::IPv4 is IO::Address::IP {
@@ -128,6 +132,10 @@ my class IO::Address::UNIX is IO::Address {
 
     method path(::?CLASS:D: --> IO::Path:D) { IO::Path.new: self.Str }
     method IO(::?CLASS:D: --> IO:D)         { self.path }
+
+    method raw(::?CLASS:D: --> Blob:D) {
+        nqp::addrtobuf(nqp::getattr(self, IO::Address, '$!VM-address'), Blob[int8].^pun)
+    }
 }
 
 BEGIN {
