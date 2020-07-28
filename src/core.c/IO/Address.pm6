@@ -54,7 +54,9 @@ my class IO::Address {
     }
 }
 
-my class IO::Address::IP is IO::Address {
+my class IO::Address::IP is IO::Address is Cool {
+    has Int:_ $!numeric;
+
     subset Port of Int:D where 0x0000..0xFFFF;
     method port(::?CLASS:D: --> Port) {
         nqp::addrport(nqp::getattr(self, IO::Address, '$!VM-address'))
@@ -71,10 +73,18 @@ my class IO::Address::IP is IO::Address {
     method raw(::?CLASS:D: Blob:U \T = blob8 --> Blob:D) {
         nqp::addrtobuf(nqp::getattr(self, IO::Address, '$!VM-address'), T.^pun)
     }
+
+    multi method Int(::?CLASS:D: --> Int:D) {
+        $!numeric // ($!numeric := self.raw(blob32).contents.reduce(* +< 32 +| *))
+    }
+
+    multi method Numeric(::?CLASS:D: --> Numeric:D) { self.Int }
 }
 
 my class IO::Address::IPv4 is IO::Address::IP {
     my constant Port = IO::Address::IP::Port;
+
+    subset Range of Int:D where ^1 +< 33;
 
     proto method new(::?CLASS:_: | --> ::?CLASS:D) {*}
     multi method new(::?CLASS:_: Str:D $literal, Port $port = 0 --> ::?CLASS:D) {
@@ -84,6 +94,9 @@ my class IO::Address::IPv4 is IO::Address::IP {
     multi method new(::?CLASS:_: Blob:D $raw, Port $port = 0 --> ::?CLASS:D) {
         nqp::p6bindattrinvres(nqp::create(self), IO::Address, '$!VM-address',
           nqp::addrfrombuf_ip4(nqp::decont($raw), nqp::decont_i($port)))
+    }
+    multi method new(::?CLASS:_: ::Range $numeric, |rest --> ::?CLASS:D) {
+        samewith blob32.new($numeric), |rest
     }
 
     method family(::?CLASS:_: --> PF_INET) { }
@@ -102,6 +115,8 @@ my class IO::Address::IPv4 is IO::Address::IP {
 my class IO::Address::IPv6 is IO::Address::IP {
     my constant Port = IO::Address::IP::Port;
 
+    subset Range of Int:D where ^1 +< 129;
+
     proto method new(::?CLASS:_: | --> ::?CLASS:D) {*}
     multi method new(::?CLASS:_: Str:D $literal, Port $port = 0 --> ::?CLASS:D) {
         nqp::p6bindattrinvres(nqp::create(self), IO::Address, '$!VM-address',
@@ -110,6 +125,9 @@ my class IO::Address::IPv6 is IO::Address::IP {
     multi method new(::?CLASS:_: Blob:D $raw, Port $port = 0, UInt:D :$scope-id = 0 --> ::?CLASS:D) {
         nqp::p6bindattrinvres(nqp::create(self), IO::Address, '$!VM-address',
           nqp::addrfrombuf_ip6(nqp::decont($raw), nqp::decont_i($port), nqp::decont_i($scope-id)))
+    }
+    multi method new(::?CLASS:_: ::Range $numeric, |rest --> ::?CLASS:D) {
+        samewith blob64.new($numeric +> 64, $numeric +& 0xFFFFFFFFFFFFFFFF), |rest
     }
 
     method family(::?CLASS:_: --> PF_INET6) { }
