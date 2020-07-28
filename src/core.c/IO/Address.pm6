@@ -87,6 +87,16 @@ my class IO::Address::IPv4 is IO::Address::IP {
     }
 
     method family(::?CLASS:_: --> PF_INET) { }
+
+    multi method gist(::?CLASS:D: --> Str:D) { "$.literal:$.port" }
+
+    multi method raku(::?CLASS:D: --> Str:D) {
+        my Str:D $raku = "$.^name\.new($.literal.raku()";
+        my Int:D $port = self.port;
+        $raku ~= ", $port.raku()" if $port;
+        $raku ~= ')';
+        $raku
+    }
 }
 
 my class IO::Address::IPv6 is IO::Address::IP {
@@ -107,17 +117,33 @@ my class IO::Address::IPv6 is IO::Address::IP {
     method scope-id(::?CLASS:D: --> Int:D) {
         nqp::addrscopeid(nqp::getattr(self, IO::Address, '$!VM-address'))
     }
+
+    multi method gist(::?CLASS:D: --> Str:D) { "[$.literal]:$.port" }
+
+    multi method raku(::?CLASS:D: --> Str:D) {
+        my Str:D $raku = "$.^name\.new($.literal.raku()";
+        my Int:D $port = self.port;
+        $raku ~= ", $port.raku()" if $port;
+        $raku ~= ')';
+        $raku
+    }
 }
 
 my class IO::Address::UNIX is IO::Address {
+    has Bool:D $!raw is required;
+
     proto method new(::?CLASS:_: | --> ::?CLASS:D) {*}
     multi method new(::?CLASS:_: IO::Path:D $path --> ::?CLASS:D) {
-        nqp::p6bindattrinvres(nqp::create(self), IO::Address, '$!VM-address',
-          nqp::addrfromstr_un(nqp::unbox_s(~$path)))
+        my ::?CLASS:D $self := nqp::create(self);
+        nqp::bindattr($self, IO::Address, '$!VM-address', nqp::addrfromstr_un(nqp::unbox_s(~$path)));
+        nqp::bindattr($self, IO::Address::UNIX, '$!raw', False);
+        $self
     }
     multi method new(::?CLASS:_: Blob:D $raw --> ::?CLASS:D) {
-        nqp::p6bindattrinvres(nqp::create(self), IO::Address, '$!VM-address',
-          nqp::addrfrombuf_un(nqp::decont($raw)))
+        my ::?CLASS:D $self := nqp::create(self);
+        nqp::bindattr($self, IO::Address, '$!VM-address', nqp::addrfrombuf_un(nqp::decont($raw)));
+        nqp::bindattr($self, IO::Address::UNIX, '$!raw', True);
+        $self
     }
 
     method family(::?CLASS:_: --> PF_UNIX) { }
@@ -135,6 +161,19 @@ my class IO::Address::UNIX is IO::Address {
 
     method raw(::?CLASS:D: --> Blob:D) {
         nqp::addrtobuf(nqp::getattr(self, IO::Address, '$!VM-address'), Blob[int8].^pun)
+    }
+
+    multi method gist(::?CLASS:D: --> Str:D) {
+        $!raw
+            ?? self.Str.encode.decode.subst(/ \x[10FFFD] x ( <[ 0..9 A..F ]> ** 2 ) /, { "%$0" }, :g)
+            !! self.Str
+    }
+
+    multi method raku(::?CLASS:D: --> Str:D) {
+        my Str:D $raku = "$.^name\.new(";
+        $raku ~= $!raw ?? self.raw.raku !! self.path.raku;
+        $raku ~= ')';
+        $raku
     }
 }
 
