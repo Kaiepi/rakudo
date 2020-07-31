@@ -15,26 +15,27 @@ enum SocketFamily (
   :PF_INET6(nqp::p6box_i(nqp::const::SOCKET_FAMILY_INET6)),
   :PF_LOCAL(nqp::p6box_i(nqp::const::SOCKET_FAMILY_UNIX)),
   :PF_UNIX(nqp::p6box_i(nqp::const::SOCKET_FAMILY_UNIX)),
-  :PF_MAX(nqp::p6box_i(nqp::const::SOCKET_FAMILY_UNIX + 1)),
 );
 
 my Enumeration:U constant ProtocolFamily = SocketFamily;
 
 enum SocketType (
-  :SOCK_PACKET(0),
-  :SOCK_STREAM(1),
-  :SOCK_DGRAM(2),
-  :SOCK_RAW(3),
-  :SOCK_RDM(4),
-  :SOCK_SEQPACKET(5),
-  :SOCK_MAX(6),
+  :SOCK_ANY(nqp::p6box_i(nqp::const::SOCKET_TYPE_ANY)),
+  :SOCK_STREAM(nqp::p6box_i(nqp::const::SOCKET_TYPE_STREAM)),
+  :SOCK_DGRAM(nqp::p6box_i(nqp::const::SOCKET_TYPE_DGRAM)),
+  :SOCK_RAW(nqp::p6box_i(nqp::const::SOCKET_TYPE_RAW)),
+  :SOCK_RDM(nqp::p6box_i(nqp::const::SOCKET_TYPE_RDM)),
+  :SOCK_SEQPACKET(nqp::p6box_i(nqp::const::SOCKET_TYPE_SEQPACKET)),
 );
 
 enum SocketProtocol (
-  :PROTO_TCP(6),
-  :PROTO_UDP(17),
+  :IPPROTO_ANY(nqp::p6box_i(nqp::const::SOCKET_PROTOCOL_ANY)),
+  :IPPROTO_TCP(nqp::p6box_i(nqp::const::SOCKET_PROTOCOL_TCP)),
+  :IPPROTO_UDP(nqp::p6box_i(nqp::const::SOCKET_PROTOCOL_UDP)),
 );
 
-my Enumeration:U constant ProtocolType = SocketProtocol;
+my Enumeration:U    constant ProtocolType = SocketProtocol;
+my SocketProtocol:D constant PROTO_TCP    = IPPROTO_TCP;
+my SocketProtocol:D constant PROTO_UDP    = IPPROTO_UDP;
 
 # vim: expandtab shiftwidth=4
