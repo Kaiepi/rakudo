@@ -8,7 +8,8 @@ enum SeekType (
   :SeekFromCurrent(1),
   :SeekFromEnd(2),
 );
-enum ProtocolFamily (
+
+enum SocketFamily (
   :PF_UNSPEC(nqp::p6box_i(nqp::const::SOCKET_FAMILY_UNSPEC)),
   :PF_INET(nqp::p6box_i(nqp::const::SOCKET_FAMILY_INET)),
   :PF_INET6(nqp::p6box_i(nqp::const::SOCKET_FAMILY_INET6)),
@@ -16,6 +17,9 @@ enum ProtocolFamily (
   :PF_UNIX(nqp::p6box_i(nqp::const::SOCKET_FAMILY_UNIX)),
   :PF_MAX(nqp::p6box_i(nqp::const::SOCKET_FAMILY_UNIX + 1)),
 );
+
+my Enumeration:U constant ProtocolFamily = SocketFamily;
+
 enum SocketType (
   :SOCK_PACKET(0),
   :SOCK_STREAM(1),
@@ -25,9 +29,12 @@ enum SocketType (
   :SOCK_SEQPACKET(5),
   :SOCK_MAX(6),
 );
-enum ProtocolType (
+
+enum SocketProtocol (
   :PROTO_TCP(6),
   :PROTO_UDP(17),
 );
+
+my Enumeration:U constant ProtocolType = SocketProtocol;
 
 # vim: expandtab shiftwidth=4

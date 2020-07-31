@@ -697,6 +697,8 @@ my @allowed =
       Q{Signature},
       Q{Slang},
       Q{Slip},
+      Q{SocketFamily},
+      Q{SocketProtocol},
       Q{SocketType},
       Q{SoftRoutine},
       Q{Stash},

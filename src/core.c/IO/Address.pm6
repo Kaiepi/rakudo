@@ -1,30 +1,30 @@
 my class IO::Address {
     has Mu $!VM-address is required;
 
-    method family(::?CLASS:_: --> ProtocolFamily:D) { ... }
+    method family(::?CLASS:_: --> SocketFamily:D) { ... }
 
     # Subtypes of IO::Address may work with one and only one family of address.
     # When this is the case, it should be registered as a specialization of
     # IO::Address for said family. These metamethods manage IO::Address' state
     # for specializations:
-    my ::?CLASS:U %specializations{ProtocolFamily:D};
+    my ::?CLASS:U %specializations{SocketFamily:D};
     method ^has_family_specialization(
         ::?CLASS:U,
-        ProtocolFamily:D $family is raw,
+        SocketFamily:D $family is raw,
         --> Bool:D
     ) is implementation-detail {
         %specializations{$family}:exists
     }
     method ^get_family_specialization(
         ::?CLASS:U,
-        ProtocolFamily:D $family is raw,
+        SocketFamily:D $family is raw,
         --> Mu
     ) is implementation-detail {
         %specializations{$family}
     }
     method ^set_family_specialization(
         ::?CLASS:U,
-        ProtocolFamily:D $family is raw,
+        SocketFamily:D $family is raw,
         ::?CLASS:U       $mixin  is raw,
         --> ::?CLASS:U
     ) is implementation-detail {
@@ -39,10 +39,10 @@ my class IO::Address {
     # IO::Address for the given family exists, then it should be returned,
     # otherwise we should generate an IO::Address mixin that at least knows
     # what family of address it belongs to:
-    my role WithFamily[ProtocolFamily:D $family is raw] {
-        method family(::?CLASS:_: --> ProtocolFamily:D) { $family }
+    my role WithFamily[SocketFamily:D $family is raw] {
+        method family(::?CLASS:_: --> SocketFamily:D) { $family }
     }
-    method ^parameterize(::?CLASS:U $this is raw, ProtocolFamily:D $family --> ::?CLASS:U) {
+    method ^parameterize(::?CLASS:U $this is raw, SocketFamily:D $family --> ::?CLASS:U) {
         if self.has_family_specialization: $this, $family {
             self.get_family_specialization: $this, $family
         }
