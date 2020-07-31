@@ -243,3 +243,18 @@ BEGIN {
     IO::Address.^set_family_specialization: PF_INET6, IO::Address::IPv6;
     IO::Address.^set_family_specialization: PF_UNIX, IO::Address::UNIX;
 }
+
+my class IO::Address::Info {
+    has IO::Address:D    $.address  is required;
+    has SocketFamily:D   $.family   is required;
+    has SocketType:D     $.type     is required;
+    has SocketProtocol:D $.protocol is required;
+
+    method new(::?CLASS:_: IO::Address:D $address, *%rest --> ::?CLASS:D) {
+        self.bless: :$address, |%rest
+    }
+
+    multi method gist(::?CLASS:D: --> Str:D) {
+        "$!address.gist()+<$!family $!type $!protocol>"
+    }
+}

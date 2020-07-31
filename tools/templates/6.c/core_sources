@@ -183,6 +183,7 @@ src/core.c/Supplier.pm6
 src/core.c/Rakudo/Supply.pm6
 src/core.c/asyncops.pm6
 src/core.c/IO/Address.pm6
+src/core.c/IO/Resolver.pm6
 src/core.c/IO/Socket.pm6
 src/core.c/IO/Socket/INET.pm6
 src/core.c/IO/Socket/Async.pm6
