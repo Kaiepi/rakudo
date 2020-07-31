@@ -1,3 +1,18 @@
+my role X::IO::Resolver is Exception { }
+
+my class X::IO::Resolver::Unreachable does X::IO::Resolver {
+    has Str:_ $.host      is required;
+    has Str:D $.operation is required;
+
+    method message(::?CLASS:D: --> Str:D) {
+        with $!host {
+            "No addresses for host '$!host' were reachable when $!operation"
+        } else {
+            "No local addresses were reachable when $!operation"
+        }
+    }
+}
+
 my class IO::Resolver {
     my constant Port = IO::Address::IP::Port;
 
@@ -38,4 +53,32 @@ my class IO::Resolver {
 
 Rakudo::Internals.REGISTER-DYNAMIC: '$*RESOLVER', {
     PROCESS::<$RESOLVER> := IO::Resolver.new;
+};
+
+Rakudo::Internals.REGISTER-DYNAMIC: '&*CONNECT', {
+    PROCESS::<&CONNECT> := sub CONNECT(Str:_ $host, Supply:D $address-info, &connect-to --> Mu) is raw {
+        for @$address-info -> IO::Address::Info:D $info {
+            # Only attempt to connect to the first address, allowing exceptions
+            # to be thrown.
+            return-rw connect-to $info;
+        }
+        X::IO::Resolver::Unreachable.new(
+            host      => $host,
+            operation => 'connecting a socket',
+        ).throw;
+    };
+};
+
+Rakudo::Internals.REGISTER-DYNAMIC: '&*BIND', {
+    PROCESS::<&BIND> := sub BIND(Str:_ $host, Supply:D $address-info, &bind-to --> Mu) is raw {
+        for @$address-info -> IO::Address::Info:D $info {
+            # Only attempt to bind to the first address, allowing exceptions to
+            # be thrown.
+            return-rw bind-to $info;
+        }
+        X::IO::Resolver::Unreachable.new(
+            host      => $host,
+            operation => 'binding a socket',
+        ).throw;
+    };
 };
