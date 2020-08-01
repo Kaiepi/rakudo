@@ -169,12 +169,19 @@ my class IO::Socket::Async {
         try $!close-vow.keep(True);
     }
 
-    method connect(IO::Socket::Async:U: Str() $host, Int() $port where Port-Number,
-                   :$enc = 'utf-8', :$scheduler = $*SCHEDULER) {
+    method connect(
+        IO::Socket::Async:U:
+        Str()           $host,
+        Int()           $port      where Port-Number,
+        IO::Resolver:D :$resolver  = $*RESOLVER,
+        Str:D          :$method    = 'lookup',
+                       :$enc       = 'utf-8',
+                       :$scheduler = $*SCHEDULER,
+    ) {
         my $p = Promise.new;
         my $v = $p.vow;
         my $encoding = Encoding::Registry.find($enc);
-        &*CONNECT($host, $*RESOLVER.lookup($host, $port,
+        &*CONNECT($host, $resolver."$method"($host, $port,
             family   => PF_UNSPEC,
             type     => SOCK_STREAM,
             protocol => IPPROTO_TCP,
@@ -225,17 +232,23 @@ my class IO::Socket::Async {
     }
 
     my class SocketListenerTappable does Tappable {
-        has $!host;
-        has $!port;
+        has                $!host;
+        has                $!port;
+        has                &!bind     is required;
+        has IO::Resolver:D $!resolver is required;
+        has Str:D          $!method   is required;
+
         has $!backlog;
         has $!encoding;
         has $!scheduler;
 
-        method new(:$host!, :$port!, :$backlog!, :$encoding!, :$scheduler!) {
-            self.CREATE!SET-SELF($host, $port, $backlog, $encoding, $scheduler)
-        }
+        method new(*%args) { self.CREATE!SET-SELF(|%args) }
 
-        method !SET-SELF($!host, $!port, $!backlog, $!encoding, $!scheduler) { self }
+        method !SET-SELF(
+            :$!host, :$!port,
+            :&!bind, :$!resolver, :$!method,
+            :$!backlog, :$!encoding, :$!scheduler,
+        ) { self }
 
         method tap(&emit, &done, &quit, &tap) {
             my $lock := Lock::Async.new;
@@ -248,7 +261,7 @@ my class IO::Socket::Async {
             my $host-vow = $socket-host.vow;
             my $port-vow = $socket-port.vow;
             $lock.protect: {
-                my $cancellation := &*BIND($!host, $*RESOLVER.resolve($!host, $!port,
+                my $cancellation := &!bind($!host, $!resolver."$!method"($!host, $!port,
                     family   => PF_UNSPEC,
                     type     => SOCK_STREAM,
                     protocol => IPPROTO_TCP,
@@ -323,11 +336,22 @@ my class IO::Socket::Async {
         method serial(--> True) { }
     }
 
-    method listen(IO::Socket::Async:U: Str() $host, Int() $port where Port-Number,
-                  Int() $backlog = 128, :$enc = 'utf-8', :$scheduler = $*SCHEDULER) {
+    method listen(
+        IO::Socket::Async:U:
+        Str()           $host,
+        Int()           $port      where Port-Number,
+        Int()           $backlog   = 128,
+        IO::Resolver:D :$resolver  = $*RESOLVER,
+        Str:D          :$method    = 'resolve',
+                       :$enc       = 'utf-8',
+                       :$scheduler = $*SCHEDULER,
+    ) {
         my $encoding = Encoding::Registry.find($enc);
+        my &bind     = &*BIND;
         Supply.new: SocketListenerTappable.new:
-            :$host, :$port, :$backlog, :$encoding, :$scheduler
+            :$host, :$port,
+            :&bind, :$resolver, :$method,
+            :$backlog, :$encoding, :$scheduler
     }
 
     method native-descriptor(--> Int) {
@@ -368,11 +392,19 @@ my class IO::Socket::Async {
         await $p
     }
 
-    method bind-udp(IO::Socket::Async:U: Str() $host, Int() $port where Port-Number,
-                    :$broadcast, :$enc = 'utf-8', :$scheduler = $*SCHEDULER) {
+    method bind-udp(
+        IO::Socket::Async:U:
+        Str()           $host,
+        Int()           $port       where Port-Number,
+        IO::Resolver:D :$resolver   = $*RESOLVER,
+        Str:D          :$method     = 'resolve',
+                       :$broadcast,
+                       :$enc        = 'utf-8',
+                       :$scheduler  = $*SCHEDULER,
+    ) {
         my $p = Promise.new;
         my $encoding = Encoding::Registry.find($enc);
-        &*BIND($host, $*RESOLVER.resolve($host, $port,
+        &*BIND($host, $resolver."$method"($host, $port,
             family   => PF_UNSPEC,
             type     => SOCK_DGRAM,
             protocol => IPPROTO_UDP,
@@ -403,16 +435,31 @@ my class IO::Socket::Async {
         await $p
     }
 
-    method print-to(IO::Socket::Async:D: Str() $host, Int() $port where Port-Number,
-                    Str() $str, :$scheduler = $*SCHEDULER) {
-        self.write-to($host, $port, $!encoder.encode-chars($str), :$scheduler)
+    method print-to(
+        IO::Socket::Async:D:
+        Str()           $host,
+        Int()           $port      where Port-Number,
+        Str()           $str,
+        IO::Resolver:D :$resolver  = $*RESOLVER,
+        Str:D          :$method    = 'lookup',
+                       :$scheduler = $*SCHEDULER,
+    ) {
+        self.write-to: $host, $port, $!encoder.encode-chars($str),
+            :$resolver, :$method, :$scheduler
     }
 
-    method write-to(IO::Socket::Async:D: Str() $host, Int() $port where Port-Number,
-                    Blob $b, :$scheduler = $*SCHEDULER) {
+    method write-to(
+        IO::Socket::Async:D:
+        Str()           $host,
+        Int()           $port      where Port-Number,
+        Blob            $b,
+        IO::Resolver:D :$resolver  = $*RESOLVER,
+        Str:D          :$method    = 'lookup',
+                       :$scheduler = $*SCHEDULER,
+    ) {
         my $p = Promise.new;
         my $v = $p.vow;
-        &*CONNECT($host, $*RESOLVER.lookup($host, $port,
+        &*CONNECT($host, $resolver."$method"($host, $port,
             family   => PF_UNSPEC,
             type     => SOCK_DGRAM,
             protocol => IPPROTO_UDP,

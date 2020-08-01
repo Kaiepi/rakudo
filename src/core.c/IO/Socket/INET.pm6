@@ -47,11 +47,13 @@ my class IO::Socket::INET does IO::Socket {
 
     # Create new socket that listens on $localhost:$localport
     multi method new(
-        Bool        :$listen!   where .so,
-        Str         :$localhost is copy,
-        Int         :$localport is copy,
-        PIO::Family :$family    = nqp::const::SOCKET_FAMILY_UNSPEC
-                    *%rest,
+        Bool           :$listen!   where .so,
+        Str            :$localhost is copy,
+        Int            :$localport is copy,
+        PIO::Family    :$family    = nqp::const::SOCKET_FAMILY_UNSPEC,
+        IO::Resolver:D :$resolver  = $*RESOLVER,
+        Str:D          :$method    = 'resolve',
+                       *%rest,
         --> IO::Socket::INET:D
     ) {
         ($localhost, $localport) = (
@@ -65,15 +67,17 @@ my class IO::Socket::INET does IO::Socket {
             :$family,
             :listening($listen),
             |%rest,
-        )!initialize()
+        )!initialize(:$resolver, :$method)
     }
 
     # Open new connection to socket on $host:$port
     multi method new(
-        Str:D       :$host!  is copy,
-        Int         :$port   is copy,
-        PIO::Family :$family = nqp::const::SOCKET_FAMILY_UNSPEC,
-                    *%rest,
+        Str:D          :$host!    is copy,
+        Int            :$port     is copy,
+        PIO::Family    :$family   = nqp::const::SOCKET_FAMILY_UNSPEC,
+        IO::Resolver:D :$resolver = $*RESOLVER,
+        Str:D          :$method   = 'lookup',
+                       *%rest,
         --> IO::Socket::INET:D
     ) {
         ($host, $port) = split-host-port(
@@ -88,7 +92,7 @@ my class IO::Socket::INET does IO::Socket {
             :$port,
             :$family,
             |%rest,
-        )!initialize()
+        )!initialize(:$resolver, :$method)
     }
 
     # Fail if no valid parameters are passed
@@ -97,7 +101,7 @@ my class IO::Socket::INET does IO::Socket {
             ~ "Invalid arguments to .new?";
     }
 
-    method !initialize() {
+    method !initialize(IO::Resolver:D :$resolver!, Str:D :$method!) {
         my $PIO := nqp::socket($!listening ?? 10 !! 0);
 
         # Quoting perl5's SIO::INET:
@@ -112,7 +116,7 @@ my class IO::Socket::INET does IO::Socket {
                   nqp::unbox_i($!family), nqp::unbox_i($!type), nqp::unbox_i($!proto),
                   nqp::unbox_i($!backlog || 128));
             } else {
-                &*BIND($!localhost, $*RESOLVER.resolve($!localhost, $!localport || 0,
+                &*BIND($!localhost, $resolver."$method"($!localhost, $!localport || 0,
                     family   => SocketFamily($!family),
                     type     => SocketType($!type),
                     protocol => SocketProtocol($!proto),
@@ -146,7 +150,7 @@ my class IO::Socket::INET does IO::Socket {
                   nqp::getattr($address, IO::Address, '$!VM-address'),
                   nqp::unbox_i($!family), nqp::unbox_i($!type), nqp::unbox_i($!port));
             } else {
-                &*CONNECT($!host, $*RESOLVER.lookup($!host, $!port,
+                &*CONNECT($!host, $resolver."$method"($!host, $!port,
                     family   => SocketFamily($!family),
                     type     => SocketType($!type),
                     protocol => SocketProtocol($!proto),
@@ -169,12 +173,31 @@ my class IO::Socket::INET does IO::Socket {
         self;
     }
 
-    method connect(IO::Socket::INET:U: Str() $host, Int() $port, SocketFamily:D :$family = PF_UNSPEC) {
-        self.new(:$host, :$port, :family($family.value))
+    method connect(
+        IO::Socket::INET:U:
+        Str()           $host,
+        Int()           $port,
+        SocketFamily:D :$family   = PF_UNSPEC,
+        IO::Resolver:D :$resolver = $*RESOLVER,
+        Str:D          :$method   = 'lookup'
+    ) {
+        self.new:
+            :$host, :$port, :family($family.value),
+            :$resolver, :$method
     }
 
-    method listen(IO::Socket::INET:U: Str() $localhost, Int() $localport, SocketFamily:D :$family = PF_UNSPEC) {
-        self.new(:$localhost, :$localport, :family($family.value), :listen)
+    method listen(
+        IO::Socket::INET:U:
+        Str()           $localhost,
+        Int()           $localport,
+        SocketFamily:D :$family     = PF_UNSPEC,
+        IO::Resolver:D :$resolver   = $*RESOLVER,
+        Str:D          :$method     = 'resolve',
+    ) {
+        self.new:
+            :listen,
+            :$localhost, :$localport, :family($family.value),
+            :$resolver, :$method
     }
 
     method accept() {
