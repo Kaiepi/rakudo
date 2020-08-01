@@ -1,4 +1,6 @@
 my class IO::Socket::Async {
+    my constant Port = IO::Address::IP::Port;
+
     my class SocketCancellation is repr('AsyncTask') { }
 
     has $!VMIO;
@@ -8,13 +10,11 @@ my class IO::Socket::Async {
     has $!close-promise;
     has $!close-vow;
 
-    subset Port-Number of Int where { !defined($_) or $_ ~~ ^65536 };
+    has Str  $.peer-host;
+    has Port $.peer-port is required;
 
-    has Str $.peer-host;
-    has Port-Number $.peer-port;
-
-    has Str $.socket-host;
-    has Port-Number $.socket-port;
+    has Str  $.socket-host;
+    has Port $.socket-port is required;
 
     method new() {
         die "Cannot create an asynchronous socket directly; please use\n" ~
@@ -172,7 +172,7 @@ my class IO::Socket::Async {
     method connect(
         IO::Socket::Async:U:
         Str()           $host,
-        Int()           $port      where Port-Number,
+        Int()           $port      where Port,
         IO::Resolver:D :$resolver  = $*RESOLVER,
         Str:D          :$method    = 'lookup',
                        :$enc       = 'utf-8',
@@ -339,7 +339,7 @@ my class IO::Socket::Async {
     method listen(
         IO::Socket::Async:U:
         Str()           $host,
-        Int()           $port      where Port-Number,
+        Int()           $port      where Port,
         Int()           $backlog   = 128,
         IO::Resolver:D :$resolver  = $*RESOLVER,
         Str:D          :$method    = 'resolve',
@@ -395,7 +395,7 @@ my class IO::Socket::Async {
     method bind-udp(
         IO::Socket::Async:U:
         Str()           $host,
-        Int()           $port       where Port-Number,
+        Int()           $port       where Port,
         IO::Resolver:D :$resolver   = $*RESOLVER,
         Str:D          :$method     = 'resolve',
                        :$broadcast,
@@ -438,7 +438,7 @@ my class IO::Socket::Async {
     method print-to(
         IO::Socket::Async:D:
         Str()           $host,
-        Int()           $port      where Port-Number,
+        Int()           $port      where Port,
         Str()           $str,
         IO::Resolver:D :$resolver  = $*RESOLVER,
         Str:D          :$method    = 'lookup',
@@ -451,7 +451,7 @@ my class IO::Socket::Async {
     method write-to(
         IO::Socket::Async:D:
         Str()           $host,
-        Int()           $port      where Port-Number,
+        Int()           $port      where Port,
         Blob            $b,
         IO::Resolver:D :$resolver  = $*RESOLVER,
         Str:D          :$method    = 'lookup',
