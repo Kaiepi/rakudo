@@ -2,6 +2,8 @@ my class IO::Socket::INET does IO::Socket {
     my module PIO {
         constant MIN_PORT = 0;
         constant MAX_PORT = 65_535; # RFC 793: TCP/UDP port limit
+
+        subset Family of Int:D where any SocketFamily.^enum_value_list;
     }
 
     has Str  $.host;
@@ -45,18 +47,13 @@ my class IO::Socket::INET does IO::Socket {
 
     # Create new socket that listens on $localhost:$localport
     multi method new(
-        Bool   :$listen! where .so,
-        Str    :$localhost is copy,
-        Int    :$localport is copy,
-        Int    :$family where {
-                $family == nqp::const::SOCKET_FAMILY_UNSPEC
-             || $family == nqp::const::SOCKET_FAMILY_INET
-             || $family == nqp::const::SOCKET_FAMILY_INET6
-             || $family == nqp::const::SOCKET_FAMILY_UNIX
-        } = nqp::const::SOCKET_FAMILY_UNSPEC,
-               *%rest,
-        --> IO::Socket::INET:D) {
-
+        Bool        :$listen!   where .so,
+        Str         :$localhost is copy,
+        Int         :$localport is copy,
+        PIO::Family :$family    = nqp::const::SOCKET_FAMILY_UNSPEC
+                    *%rest,
+        --> IO::Socket::INET:D
+    ) {
         ($localhost, $localport) = (
             split-host-port :host($localhost), :port($localport), :$family
         orelse fail $_) unless $family == nqp::const::SOCKET_FAMILY_UNIX;
@@ -73,17 +70,12 @@ my class IO::Socket::INET does IO::Socket {
 
     # Open new connection to socket on $host:$port
     multi method new(
-        Str:D :$host! is copy,
-        Int   :$port is copy,
-        Int   :$family where {
-               $family == nqp::const::SOCKET_FAMILY_UNSPEC
-            || $family == nqp::const::SOCKET_FAMILY_INET
-            || $family == nqp::const::SOCKET_FAMILY_INET6
-            || $family == nqp::const::SOCKET_FAMILY_UNIX
-        } = nqp::const::SOCKET_FAMILY_UNSPEC,
-              *%rest,
-        --> IO::Socket::INET:D) {
-
+        Str:D       :$host!  is copy,
+        Int         :$port   is copy,
+        PIO::Family :$family = nqp::const::SOCKET_FAMILY_UNSPEC,
+                    *%rest,
+        --> IO::Socket::INET:D
+    ) {
         ($host, $port) = split-host-port(
             :$host,
             :$port,
