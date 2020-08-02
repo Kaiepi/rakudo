@@ -16,6 +16,8 @@ my class IO::Socket::Async {
     has Str  $.socket-host;
     has Port $.socket-port is required;
 
+    has SocketFamily:D $.family is required;
+
     method new() {
         die "Cannot create an asynchronous socket directly; please use\n" ~
             "IO::Socket::Async.connect, IO::Socket::Async.listen,\n" ~
@@ -173,6 +175,7 @@ my class IO::Socket::Async {
         IO::Socket::Async:U:
         Str()           $host,
         Int()           $port      where Port,
+        SocketFamily:D :$family    = PF_UNSPEC,
         IO::Resolver:D :$resolver  = $*RESOLVER,
         Str:D          :$method    = 'lookup',
                        :$enc       = 'utf-8',
@@ -182,7 +185,7 @@ my class IO::Socket::Async {
         my $v = $p.vow;
         my $encoding = Encoding::Registry.find($enc);
         &*CONNECT($host, $resolver."$method"($host, $port,
-            family   => PF_UNSPEC,
+            family   => $family,
             type     => SOCK_STREAM,
             protocol => IPPROTO_TCP,
             passive  => True, # For the sake of compatibility.
@@ -203,7 +206,7 @@ my class IO::Socket::Async {
                         nqp::bindattr($client_socket, IO::Socket::Async, '$!peer-port', peer-port);
                         nqp::bindattr($client_socket, IO::Socket::Async, '$!socket-host', socket-host);
                         nqp::bindattr($client_socket, IO::Socket::Async, '$!socket-port', socket-port);
-
+                        nqp::bindattr($client_socket, IO::Socket::Async, '$!family', $info.family);
                         setup-close($client_socket);
                         $v.keep($client_socket);
                     }
@@ -217,13 +220,14 @@ my class IO::Socket::Async {
 
     class ListenSocket is Tap {
         has Promise $!VMIO-tobe;
+        has Promise $.family;
         has Promise $.socket-host;
         has Promise $.socket-port;
 
-        submethod TWEAK(Promise :$!VMIO-tobe, Promise :$!socket-host, Promise :$!socket-port) { }
+        submethod TWEAK(Promise :$!VMIO-tobe, Promise :$!family, Promise :$!socket-host, Promise :$!socket-port) { }
 
-        method new(&on-close, Promise :$VMIO-tobe, Promise :$socket-host, Promise :$socket-port) {
-            self.bless(:&on-close, :$VMIO-tobe, :$socket-host, :$socket-port);
+        method new(&on-close, *%rest) {
+            self.bless: :&on-close, |%rest
         }
 
         method native-descriptor(--> Int) {
@@ -234,6 +238,7 @@ my class IO::Socket::Async {
     my class SocketListenerTappable does Tappable {
         has                $!host;
         has                $!port;
+        has SocketFamily:D $!family   is required;
         has                &!bind     is required;
         has IO::Resolver:D $!resolver is required;
         has Str:D          $!method   is required;
@@ -245,7 +250,7 @@ my class IO::Socket::Async {
         method new(*%args) { self.CREATE!SET-SELF(|%args) }
 
         method !SET-SELF(
-            :$!host, :$!port,
+            :$!host, :$!port, :$!family,
             :&!bind, :$!resolver, :$!method,
             :$!backlog, :$!encoding, :$!scheduler,
         ) { self }
@@ -255,14 +260,16 @@ my class IO::Socket::Async {
             my $tap;
             my int $finished = 0;
             my Promise $VMIO-tobe   .= new;
+            my Promise $family      .= new;
             my Promise $socket-host .= new;
             my Promise $socket-port .= new;
-            my $VMIO-vow = $VMIO-tobe.vow;
-            my $host-vow = $socket-host.vow;
-            my $port-vow = $socket-port.vow;
+            my $VMIO-vow   = $VMIO-tobe.vow;
+            my $family-vow = $family.vow;
+            my $host-vow   = $socket-host.vow;
+            my $port-vow   = $socket-port.vow;
             $lock.protect: {
                 my $cancellation := &!bind($!host, $!resolver."$!method"($!host, $!port,
-                    family   => PF_UNSPEC,
+                    family   => $!family,
                     type     => SOCK_STREAM,
                     protocol => IPPROTO_TCP,
                     passive  => True,
@@ -298,11 +305,14 @@ my class IO::Socket::Async {
                                         '$!socket-host', socket-host);
                                     nqp::bindattr($client_socket, IO::Socket::Async,
                                         '$!socket-port', socket-port);
+                                    nqp::bindattr($client_socket, IO::Socket::Async,
+                                        '$!family', $info.family);
                                     setup-close($client_socket);
                                     emit($client_socket);
                                 }
                                 elsif server-socket {
                                     $VMIO-vow.keep(server-socket);
+                                    $family-vow.keep($info.family);
                                     $host-vow.keep(~socket-host);
                                     $port-vow.keep(+socket-port);
                                 }
@@ -318,12 +328,12 @@ my class IO::Socket::Async {
                     my $v = $p.vow;
                     nqp::cancelnotify($cancellation, $!scheduler.queue, { $v.keep(True); });
                     $p
-                }, :$VMIO-tobe, :$socket-host, :$socket-port;
+                }, :$VMIO-tobe, :$family, :$socket-host, :$socket-port;
                 tap($tap);
                 CATCH {
                     default {
                         tap($tap = ListenSocket.new({ Nil },
-                            :$VMIO-tobe, :$socket-host, :$socket-port)) unless $tap;
+                            :$VMIO-tobe, :$family, :$socket-host, :$socket-port)) unless $tap;
                         quit($_);
                     }
                 }
@@ -341,6 +351,7 @@ my class IO::Socket::Async {
         Str()           $host,
         Int()           $port      where Port,
         Int()           $backlog   = 128,
+        SocketFamily:D :$family    = PF_UNSPEC,
         IO::Resolver:D :$resolver  = $*RESOLVER,
         Str:D          :$method    = 'resolve',
                        :$enc       = 'utf-8',
@@ -349,7 +360,7 @@ my class IO::Socket::Async {
         my $encoding = Encoding::Registry.find($enc);
         my &bind     = &*BIND;
         Supply.new: SocketListenerTappable.new:
-            :$host, :$port,
+            :$host, :$port, :$family,
             :&bind, :$resolver, :$method,
             :$backlog, :$encoding, :$scheduler
     }
@@ -365,7 +376,13 @@ my class IO::Socket::Async {
     }
 
 #?if moar
-    method udp(IO::Socket::Async:U: :$broadcast, :$enc = 'utf-8', :$scheduler = $*SCHEDULER) {
+    method udp(
+        IO::Socket::Async:U:
+        SocketFamily:D :$family     = PF_UNSPEC,
+                       :$broadcast,
+                       :$enc        = 'utf-8',
+                       :$scheduler  = $*SCHEDULER
+    ) {
         my $p = Promise.new;
         my $encoding = Encoding::Registry.find($enc);
         nqp::asyncudp(
@@ -381,12 +398,13 @@ my class IO::Socket::Async {
                     nqp::bindattr($client_socket, IO::Socket::Async, '$!enc', $encoding.name);
                     nqp::bindattr($client_socket, IO::Socket::Async, '$!encoder',
                         $encoding.encoder());
+                    nqp::bindattr($client_socket, IO::Socket::Async, '$!family', nqp::decont($family));
                     setup-close($client_socket);
                     $p.keep($client_socket);
                 }
             },
             nqp::null,
-            nqp::unbox_i(PF_UNSPEC.value),
+            nqp::unbox_i($family.value),
             $broadcast ?? 1 !! 0,
             SocketCancellation);
         await $p
@@ -396,6 +414,7 @@ my class IO::Socket::Async {
         IO::Socket::Async:U:
         Str()           $host,
         Int()           $port       where Port,
+        SocketFamily:D :$family     = PF_UNSPEC,
         IO::Resolver:D :$resolver   = $*RESOLVER,
         Str:D          :$method     = 'resolve',
                        :$broadcast,
@@ -405,7 +424,7 @@ my class IO::Socket::Async {
         my $p = Promise.new;
         my $encoding = Encoding::Registry.find($enc);
         &*BIND($host, $resolver."$method"($host, $port,
-            family   => PF_UNSPEC,
+            family   => $family,
             type     => SOCK_DGRAM,
             protocol => IPPROTO_UDP,
             passive  => True,
@@ -423,6 +442,7 @@ my class IO::Socket::Async {
                         nqp::bindattr($client_socket, IO::Socket::Async, '$!enc', $encoding.name);
                         nqp::bindattr($client_socket, IO::Socket::Async, '$!encoder',
                             $encoding.encoder());
+                        nqp::bindattr($client_socket, IO::Socket::Async, '$!family', $info.family);
                         setup-close($client_socket);
                         $p.keep($client_socket);
                     }
@@ -460,7 +480,7 @@ my class IO::Socket::Async {
         my $p = Promise.new;
         my $v = $p.vow;
         &*CONNECT($host, $resolver."$method"($host, $port,
-            family   => PF_UNSPEC,
+            family   => $!family,
             type     => SOCK_DGRAM,
             protocol => IPPROTO_UDP,
             passive  => True, # For the sake of compatibility.
