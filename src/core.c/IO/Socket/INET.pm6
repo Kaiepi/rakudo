@@ -3,7 +3,9 @@ my class IO::Socket::INET does IO::Socket {
         constant MIN_PORT = 0;
         constant MAX_PORT = 65_535; # RFC 793: TCP/UDP port limit
 
-        subset Family of Int:D where any SocketFamily.^enum_value_list;
+        subset Family   of Int:D where any SocketFamily.^enum_value_list;
+        subset Type     of Int:D where any SocketType.^enum_value_list;
+        subset Protocol of Int:D where any SocketProtocol.^enum_value_list;
     }
 
     has Str  $.host;
@@ -51,6 +53,8 @@ my class IO::Socket::INET does IO::Socket {
         Str            :$localhost is copy,
         Int            :$localport is copy,
         PIO::Family    :$family    = nqp::const::SOCKET_FAMILY_UNSPEC,
+        PIO::Type      :$type      = nqp::const::SOCKET_TYPE_STREAM,
+        PIO::Protocol  :$proto     = nqp::const::SOCKET_PROTOCOL_ANY,
         IO::Resolver:D :$resolver  = $*RESOLVER,
         Str:D          :$method    = 'resolve',
                        *%rest,
@@ -65,6 +69,8 @@ my class IO::Socket::INET does IO::Socket {
             :$localhost,
             :$localport,
             :$family,
+            :$type,
+            :$proto,
             :listening($listen),
             |%rest,
         )!initialize(:$resolver, :$method)
@@ -75,6 +81,8 @@ my class IO::Socket::INET does IO::Socket {
         Str:D          :$host!    is copy,
         Int            :$port     is copy,
         PIO::Family    :$family   = nqp::const::SOCKET_FAMILY_UNSPEC,
+        PIO::Type      :$type     = nqp::const::SOCKET_TYPE_STREAM,
+        PIO::Protocol  :$proto    = nqp::const::SOCKET_PROTOCOL_ANY,
         IO::Resolver:D :$resolver = $*RESOLVER,
         Str:D          :$method   = 'lookup',
                        *%rest,
@@ -91,6 +99,8 @@ my class IO::Socket::INET does IO::Socket {
             :$host,
             :$port,
             :$family,
+            :$type,
+            :$proto,
             |%rest,
         )!initialize(:$resolver, :$method)
     }
