@@ -15,9 +15,9 @@ my class IO::Socket::INET does IO::Socket {
     has Int  $.backlog;
     has Bool $.listening;
 
-    has SocketFamily:D   $.family is required;
-    has SocketType:D     $.type   is required;
-    has SocketProtocol:D $.proto  is required;
+    has SocketFamily:D   $.family   is required;
+    has SocketType:D     $.type     is required;
+    has SocketProtocol:D $.protocol is required;
 
     # XXX: this could be a bit smarter about how it deals with unspecified
     # families...
@@ -50,14 +50,14 @@ my class IO::Socket::INET does IO::Socket {
 
     # Create new socket that listens on $localhost:$localport
     multi method new(
-        Bool           :$listen!   where .so,
-        Str            :$localhost is copy,
-        Int            :$localport is copy,
-        PIO::Family    :$family    = nqp::const::SOCKET_FAMILY_UNSPEC,
-        PIO::Type      :$type      = nqp::const::SOCKET_TYPE_STREAM,
-        PIO::Protocol  :$proto     = nqp::const::SOCKET_PROTOCOL_ANY,
-        IO::Resolver:D :$resolver  = $*RESOLVER,
-        Str:D          :$method    = 'resolve',
+        Bool           :$listen!          where .so,
+        Str            :$localhost        is copy,
+        Int            :$localport        is copy,
+        PIO::Family    :$family           = nqp::const::SOCKET_FAMILY_UNSPEC,
+        PIO::Type      :$type             = nqp::const::SOCKET_TYPE_STREAM,
+        PIO::Protocol  :proto(:$protocol) = nqp::const::SOCKET_PROTOCOL_ANY,
+        IO::Resolver:D :$resolver         = $*RESOLVER,
+        Str:D          :$method           = 'resolve',
                        *%rest,
         --> IO::Socket::INET:D
     ) {
@@ -70,7 +70,7 @@ my class IO::Socket::INET does IO::Socket {
             localport => $localport,
             family    => SocketFamily($family),
             type      => SocketType($type),
-            proto     => SocketProtocol($proto),
+            protocol  => SocketProtocol($protocol),
             listening => $listen,
             |%rest,
         )!initialize(:$resolver, :$method)
@@ -78,13 +78,13 @@ my class IO::Socket::INET does IO::Socket {
 
     # Open new connection to socket on $host:$port
     multi method new(
-        Str:D          :$host!    is copy,
-        Int            :$port     is copy,
-        PIO::Family    :$family   = nqp::const::SOCKET_FAMILY_UNSPEC,
-        PIO::Type      :$type     = nqp::const::SOCKET_TYPE_STREAM,
-        PIO::Protocol  :$proto    = nqp::const::SOCKET_PROTOCOL_ANY,
-        IO::Resolver:D :$resolver = $*RESOLVER,
-        Str:D          :$method   = 'lookup',
+        Str:D          :$host!            is copy,
+        Int            :$port             is copy,
+        PIO::Family    :$family           = nqp::const::SOCKET_FAMILY_UNSPEC,
+        PIO::Type      :$type             = nqp::const::SOCKET_TYPE_STREAM,
+        PIO::Protocol  :proto(:$protocol) = nqp::const::SOCKET_PROTOCOL_ANY,
+        IO::Resolver:D :$resolver         = $*RESOLVER,
+        Str:D          :$method           = 'lookup',
                        *%rest,
         --> IO::Socket::INET:D
     ) {
@@ -95,11 +95,11 @@ my class IO::Socket::INET does IO::Socket {
         ) unless $family == nqp::const::SOCKET_FAMILY_UNIX;
 
         self.bless(
-            host   => $host,
-            port   => $port,
-            family => SocketFamily($family),
-            type   => SocketType($type),
-            proto  => SocketProtocol($proto),
+            host     => $host,
+            port     => $port,
+            family   => SocketFamily($family),
+            type     => SocketType($type),
+            protocol => SocketProtocol($protocol),
             |%rest,
         )!initialize(:$resolver, :$method)
     }
@@ -124,14 +124,12 @@ my class IO::Socket::INET does IO::Socket {
                   nqp::getattr($address, IO::Address, '$!VM-address'),
                   nqp::unbox_i($!family.value),
                   nqp::unbox_i($!type.value),
-                  nqp::unbox_i($!proto.value),
+                  nqp::unbox_i($!protocol.value),
                   nqp::unbox_i($!backlog || 128));
             } else {
                 &*BIND($!localhost, $resolver."$method"($!localhost, $!localport || 0,
-                    family   => $!family,
-                    type     => $!type,
-                    protocol => $!proto,
-                    passive  => True,
+                    :$!family, :$!type, :$!protocol,
+                    :passive,
                 ), -> IO::Address::Info:D $info {
                     my Mu $result := nqp::bindsock($PIO,
                       nqp::getattr($info.address, IO::Address, '$!VM-address'),
@@ -141,7 +139,7 @@ my class IO::Socket::INET does IO::Socket {
                       nqp::unbox_i($!backlog || 128));
                     nqp::bindattr(self, $?CLASS, '$!family', $info.family);
                     nqp::bindattr(self, $?CLASS, '$!type', $info.type);
-                    nqp::bindattr(self, $?CLASS, '$!proto', $info.protocol);
+                    nqp::bindattr(self, $?CLASS, '$!protocol', $info.protocol);
                     $result
                 });
             }
@@ -161,13 +159,11 @@ my class IO::Socket::INET does IO::Socket {
                   nqp::getattr($address, IO::Address, '$!VM-address'),
                   nqp::unbox_i($!family.value),
                   nqp::unbox_i($!type.value),
-                  nqp::unbox_i($!proto.value));
+                  nqp::unbox_i($!protocol.value));
             } else {
                 &*CONNECT($!host, $resolver."$method"($!host, $!port,
-                    family   => $!family,
-                    type     => $!type,
-                    protocol => $!proto,
-                    passive  => True, # For the sake of compatibility.
+                    :$!family, :$!type, :$!protocol,
+                    :passive, # For the sake of compatibility.
                 ), -> IO::Address::Info:D $info {
                     my Mu $result := nqp::connect($PIO,
                       nqp::getattr($info.address, IO::Address, '$!VM-address'),
@@ -176,7 +172,7 @@ my class IO::Socket::INET does IO::Socket {
                       nqp::unbox_i($info.protocol.value));
                     nqp::bindattr(self, $?CLASS, '$!family', $info.family);
                     nqp::bindattr(self, $?CLASS, '$!type', $info.type);
-                    nqp::bindattr(self, $?CLASS, '$!proto', $info.protocol);
+                    nqp::bindattr(self, $?CLASS, '$!protocol', $info.protocol);
                     $result
                 });
             }
@@ -215,7 +211,7 @@ my class IO::Socket::INET does IO::Socket {
 
     method accept() {
         # A solution as proposed by moritz
-        my $new_sock := $?CLASS.bless(:$!family, :$!proto, :$!type, :$!nl-in);
+        my $new_sock := $?CLASS.bless(:$!family, :$!type, :$!protocol, :$!nl-in);
         nqp::bindattr($new_sock, $?CLASS, '$!PIO',
             nqp::accept(nqp::getattr(self, $?CLASS, '$!PIO'))
         );
@@ -230,7 +226,16 @@ my class IO::Socket::INET does IO::Socket {
 
     method type(::?CLASS:D: --> Int:D) { $!type.value }
 
-    method proto(::?CLASS:D: --> Int:D) { $!proto.value }
+    method proto(::?CLASS:D: --> Int:D) {
+        Rakudo::Deprecations.DEPRECATED:
+            'IO::Socket::INET.protocol',
+            '2020.FUTURE', # FIXME
+            '6.e',
+            :what<IO::Socket::INET.proto>;
+        $!protocol.value
+    }
+
+    method protocol(::?CLASS:D: --> Int:D) { $!protocol.value }
 }
 
 # vim: expandtab shiftwidth=4
