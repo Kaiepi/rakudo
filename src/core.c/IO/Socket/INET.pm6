@@ -15,10 +15,6 @@ my class IO::Socket::INET does IO::Socket {
     has Int  $.backlog;
     has Bool $.listening;
 
-    has SocketFamily:D   $.family   is required;
-    has SocketType:D     $.type     is required;
-    has SocketProtocol:D $.protocol is required;
-
     # XXX: this could be a bit smarter about how it deals with unspecified
     # families...
     my sub split-host-port(:$host is copy, :$port is copy, :$family) {

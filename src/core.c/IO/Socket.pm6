@@ -6,6 +6,10 @@ my role IO::Socket {
     has Encoding::Decoder $!decoder;
     has Encoding::Encoder $!encoder;
 
+    has SocketFamily:D   $.family   is required;
+    has SocketType:D     $.type     is required;
+    has SocketProtocol:D $.protocol is required;
+
     method !ensure-coders(--> Nil) {
         unless $!decoder.DEFINITE {
             my $encoding = Encoding::Registry.find($!encoding);
