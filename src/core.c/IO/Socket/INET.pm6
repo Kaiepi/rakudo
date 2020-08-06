@@ -214,6 +214,22 @@ my class IO::Socket::INET does IO::Socket {
         return $new_sock;
     }
 
+    method local-address(::?CLASS:D: --> IO::Address:D) {
+        fail 'Socket not available' unless $!PIO;
+        given nqp::getsockname($!PIO) -> [Int:D $family is raw, Mu $VM-address is raw] {
+            my IO::Address:U \T = IO::Address[SocketFamily($family)];
+            nqp::p6bindattrinvres(nqp::create(T), IO::Address, '$!VM-address', $VM-address)
+        }
+    }
+
+    method remote-address(::?CLASS:D: --> IO::Address:D) {
+        fail 'Socket not available' unless $!PIO;
+        given nqp::getpeername($!PIO) -> [Int:D $family is raw, Mu $VM-address is raw] {
+            my IO::Address:U \T = IO::Address[SocketFamily($family)];
+            nqp::p6bindattrinvres(nqp::create(T), IO::Address, '$!VM-address', $VM-address)
+        }
+    }
+
     # IO::Socket::INET was originally written to treat socket families, types,
     # and protocols as integers. For compatibility reasons, these are still
     # exposed as such, but the following methods are to be removed in v6.e.
