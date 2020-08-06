@@ -15,9 +15,9 @@ my class IO::Socket::INET does IO::Socket {
     has Int  $.backlog;
     has Bool $.listening;
 
-    has $.family is required;
-    has $.type   is required;
-    has $.proto  is required;
+    has SocketFamily:D   $.family is required;
+    has SocketType:D     $.type   is required;
+    has SocketProtocol:D $.proto  is required;
 
     # XXX: this could be a bit smarter about how it deals with unspecified
     # families...
@@ -65,14 +65,13 @@ my class IO::Socket::INET does IO::Socket {
             split-host-port :host($localhost), :port($localport), :$family
         orelse fail $_) unless $family == nqp::const::SOCKET_FAMILY_UNIX;
 
-        #TODO: Learn what protocols map to which socket types and then determine which is needed.
         self.bless(
-            :$localhost,
-            :$localport,
-            :$family,
-            :$type,
-            :$proto,
-            :listening($listen),
+            localhost => $localhost,
+            localport => $localport,
+            family    => SocketFamily($family),
+            type      => SocketType($type),
+            proto     => SocketProtocol($proto),
+            listening => $listen,
             |%rest,
         )!initialize(:$resolver, :$method)
     }
@@ -95,13 +94,12 @@ my class IO::Socket::INET does IO::Socket {
             :$family,
         ) unless $family == nqp::const::SOCKET_FAMILY_UNIX;
 
-        # TODO: Learn what protocols map to which socket types and then determine which is needed.
         self.bless(
-            :$host,
-            :$port,
-            :$family,
-            :$type,
-            :$proto,
+            host   => $host,
+            port   => $port,
+            family => SocketFamily($family),
+            type   => SocketType($type),
+            proto  => SocketProtocol($proto),
             |%rest,
         )!initialize(:$resolver, :$method)
     }
@@ -124,13 +122,15 @@ my class IO::Socket::INET does IO::Socket {
                 my IO::Address::UNIX:D $address := IO::Address::UNIX.new: $!localhost.IO;
                 nqp::bindsock($PIO,
                   nqp::getattr($address, IO::Address, '$!VM-address'),
-                  nqp::unbox_i($!family), nqp::unbox_i($!type), nqp::unbox_i($!proto),
+                  nqp::unbox_i($!family.value),
+                  nqp::unbox_i($!type.value),
+                  nqp::unbox_i($!proto.value),
                   nqp::unbox_i($!backlog || 128));
             } else {
                 &*BIND($!localhost, $resolver."$method"($!localhost, $!localport || 0,
-                    family   => SocketFamily($!family),
-                    type     => SocketType($!type),
-                    protocol => SocketProtocol($!proto),
+                    family   => $!family,
+                    type     => $!type,
+                    protocol => $!proto,
                     passive  => True,
                 ), -> IO::Address::Info:D $info {
                     my Mu $result := nqp::bindsock($PIO,
@@ -139,9 +139,9 @@ my class IO::Socket::INET does IO::Socket {
                       nqp::unbox_i($info.type.value),
                       nqp::unbox_i($info.protocol.value),
                       nqp::unbox_i($!backlog || 128));
-                    nqp::bindattr(self, $?CLASS, '$!family', $info.family.value);
-                    nqp::bindattr(self, $?CLASS, '$!type', $info.type.value);
-                    nqp::bindattr(self, $?CLASS, '$!proto', $info.protocol.value);
+                    nqp::bindattr(self, $?CLASS, '$!family', $info.family);
+                    nqp::bindattr(self, $?CLASS, '$!type', $info.type);
+                    nqp::bindattr(self, $?CLASS, '$!proto', $info.protocol);
                     $result
                 });
             }
@@ -159,12 +159,14 @@ my class IO::Socket::INET does IO::Socket {
                 my IO::Address::UNIX:D $address := IO::Address::UNIX.new: $!host.IO;
                 nqp::connect($PIO,
                   nqp::getattr($address, IO::Address, '$!VM-address'),
-                  nqp::unbox_i($!family), nqp::unbox_i($!type), nqp::unbox_i($!port));
+                  nqp::unbox_i($!family.value),
+                  nqp::unbox_i($!type.value),
+                  nqp::unbox_i($!proto.value));
             } else {
                 &*CONNECT($!host, $resolver."$method"($!host, $!port,
-                    family   => SocketFamily($!family),
-                    type     => SocketType($!type),
-                    protocol => SocketProtocol($!proto),
+                    family   => $!family,
+                    type     => $!type,
+                    protocol => $!proto,
                     passive  => True, # For the sake of compatibility.
                 ), -> IO::Address::Info:D $info {
                     my Mu $result := nqp::connect($PIO,
@@ -172,9 +174,9 @@ my class IO::Socket::INET does IO::Socket {
                       nqp::unbox_i($info.family.value),
                       nqp::unbox_i($info.type.value),
                       nqp::unbox_i($info.protocol.value));
-                    nqp::bindattr(self, $?CLASS, '$!family', $info.family.value);
-                    nqp::bindattr(self, $?CLASS, '$!type', $info.type.value);
-                    nqp::bindattr(self, $?CLASS, '$!proto', $info.protocol.value);
+                    nqp::bindattr(self, $?CLASS, '$!family', $info.family);
+                    nqp::bindattr(self, $?CLASS, '$!type', $info.type);
+                    nqp::bindattr(self, $?CLASS, '$!proto', $info.protocol);
                     $result
                 });
             }
@@ -219,6 +221,16 @@ my class IO::Socket::INET does IO::Socket {
         );
         return $new_sock;
     }
+
+    # IO::Socket::INET was originally written to treat socket families, types,
+    # and protocols as integers. For compatibility reasons, these are still
+    # exposed as such, but the following methods are to be removed in v6.e.
+
+    method family(::?CLASS:D: --> Int:D) { $!family.value }
+
+    method type(::?CLASS:D: --> Int:D) { $!type.value }
+
+    method proto(::?CLASS:D: --> Int:D) { $!proto.value }
 }
 
 # vim: expandtab shiftwidth=4
