@@ -14,9 +14,10 @@ my class IO::Socket::INET does IO::Socket {
     has Int  $.localport;
     has Int  $.backlog;
     has Bool $.listening;
-    has      $.family     = nqp::const::SOCKET_FAMILY_UNSPEC;
-    has      $.proto      = nqp::const::SOCKET_PROTOCOL_ANY;
-    has      $.type       = nqp::const::SOCKET_TYPE_STREAM;
+
+    has $.family is required;
+    has $.type   is required;
+    has $.proto  is required;
 
     # XXX: this could be a bit smarter about how it deals with unspecified
     # families...
