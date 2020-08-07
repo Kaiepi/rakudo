@@ -217,7 +217,6 @@ my class IO::Socket::Async {
             family   => $family,
             type     => SOCK_STREAM,
             protocol => IPPROTO_TCP,
-            passive  => True, # For the sake of compatibility.
         ), -> IO::Address::Info:D $info {
             nqp::asyncconnect(
                 $scheduler.queue,
@@ -608,7 +607,6 @@ my class IO::Socket::Async {
             family   => $!family,
             type     => SOCK_DGRAM,
             protocol => IPPROTO_UDP,
-            passive  => True, # For the sake of compatibility.
         ), -> IO::Address::Info:D $info {
             nqp::asyncwritebytesto($!VMIO,
                 $scheduler.queue,
