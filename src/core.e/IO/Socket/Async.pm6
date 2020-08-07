@@ -56,24 +56,6 @@ my class IO::Socket::Async {
               ?? X::AdHoc.new( payload => "Cannot encode a datagram with Blob data" ).throw
               !! self.clone(data => $!data.encode(|c))
         }
-
-        method hostname(::?CLASS:D: --> Str:D) {
-            Rakudo::Deprecations.DEPRECATED:
-                'IO::Socket::Async::Datagram.address.literal',
-                '2020.FUTURE', # FIXME
-                '6.e',
-                :what<IO::Socket::Async::Datagram.hostname>;
-            $!address.literal
-        }
-
-        method port(::?CLASS:D: --> Port) {
-            Rakudo::Deprecations.DEPRECATED:
-                'IO::Socket::Async::Datagram.address.port',
-                '2020.FUTURE', # FIXME
-                '6.e',
-                :what<IO::Socket::Async::Datagram.port>;
-            $!address.port
-        }
     }
 
     my class SocketReaderTappable does Tappable {
@@ -279,24 +261,6 @@ my class IO::Socket::Async {
 
         method native-descriptor(--> Int) {
             nqp::filenofh(await $!VMIO-tobe)
-        }
-
-        method socket-host(::?CLASS:D: --> Promise:D) {
-            Rakudo::Internals.DEPRECATED:
-                'the literal method of the address kept by IO::Socket::Async::ListenSocket.local-address',
-                '2020.FUTURE', # FIXME
-                '6.e',
-                :what<IO::Socket::Async::ListenSocket.socket-host>;
-            self.local-address.then: *.result.literal
-        }
-
-        method socket-port(::?CLASS:D: --> Promise:D) {
-            Rakudo::Internals.DEPRECATED:
-                'the port method of the address kept by IO::Socket::Async::ListenSocket.local-address',
-                '2020.FUTURE', # FIXME
-                '6.e',
-                :what<IO::Socket::Async::ListenSocket.socket-port>;
-            self.local-address.then: *.result.port
         }
     };
 
@@ -663,42 +627,6 @@ my class IO::Socket::Async {
         $p
     }
 #?endif
-
-    method socket-host(::?CLASS:D: --> Str:D) {
-        Rakudo::Internals.DEPRECATED:
-            'IO::Socket::Async.local-address.literal',
-            '2020.FUTURE', # FIXME
-            '6.e',
-            :what<IO::Socket::Async.socket-host>;
-        self.local-address.literal
-    }
-
-    method socket-port(::?CLASS:D: --> Port) {
-        Rakudo::Internals.DEPRECATED:
-            'IO::Socket::Async.local-address.port',
-            '2020.FUTURE', # FIXME
-            '6.e',
-            :what<IO::Socket::Async.socket-port>;
-        self.local-address.port
-    }
-
-    method peer-host(::?CLASS:D: --> Str:D) {
-        Rakudo::Internals.DEPRECATED:
-            'IO::Socket::Async.remote-address.literal',
-            '2020.FUTURE', # FIXME
-            '6.e',
-            :what<IO::Socket::Async.peer-host>;
-        self.remote-address.literal
-    }
-
-    method peer-port(::?CLASS:D: --> Port) {
-        Rakudo::Internals.DEPRECATED:
-            'IO::Socket::Async.remote-address.port',
-            '2020.FUTURE', # FIXME
-            '6.e',
-            :what<IO::Socket::Async.peer-port>;
-        self.remote-address.port
-    }
 }
 
 # vim: expandtab shiftwidth=4
