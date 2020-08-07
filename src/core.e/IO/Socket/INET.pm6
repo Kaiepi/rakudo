@@ -8,10 +8,6 @@ my class IO::Socket::INET does IO::Socket {
         subset Protocol of Int:D where any SocketProtocol.^enum_value_list;
     }
 
-    has Str  $!host       is built;
-    has Int  $!port       is built;
-    has Str  $!localhost  is built;
-    has Int  $!localport  is built;
     has Int  $.backlog;
     has Bool $.listening;
 
@@ -86,8 +82,6 @@ my class IO::Socket::INET does IO::Socket {
         --> IO::Socket::INET:D
     ) {
         self.bless(
-            localhost => $localhost,
-            localport => $localport,
             family    => SocketFamily($family),
             type      => SocketType($type),
             protocol  => SocketProtocol($protocol),
@@ -176,8 +170,6 @@ my class IO::Socket::INET does IO::Socket {
         --> IO::Socket::INET:D
     ) {
         self.bless(
-            host     => $host,
-            port     => $port,
             family   => SocketFamily($family),
             type     => SocketType($type),
             protocol => SocketProtocol($protocol),
@@ -293,61 +285,6 @@ my class IO::Socket::INET does IO::Socket {
             nqp::p6bindattrinvres(nqp::create(T), IO::Address, '$!VM-address', $VM-address)
         }
     }
-
-    method localhost(::?CLASS:D: --> Str:_) {
-        Rakudo::Deprecations.DEPRECATED:
-            'IO::Socket::INET.local-address.literal',
-            '2020.FUTURE', # FIXME
-            '6.e',
-            :what<IO::Socket::INET.localhost>;
-        $!localhost
-    }
-
-    method localport(::?CLASS:D: --> Int:_) {
-        Rakudo::Deprecations.DEPRECATED:
-            'IO::Socket::INET.local-address.port',
-            '2020.FUTURE', # FIXME
-            '6.e',
-            :what<IO::Socket::INET.localport>;
-        $!localport
-    }
-
-    method host(::?CLASS:D: --> Str:_) {
-        Rakudo::Deprecations.DEPRECATED:
-            'IO::Socket::INET.remote-address.literal',
-            '2020.FUTURE', # FIXME
-            '6.e',
-            :what<IO::Socket::INET.host>;
-        $!host
-    }
-
-    method port(::?CLASS:D: --> Int:_) {
-        Rakudo::Deprecations.DEPRECATED:
-            'IO::Socket::INET.remote-address.port',
-            '2020.FUTURE', # FIXME
-            '6.e',
-            :what<IO::Socket::INET.port>;
-        $!port
-    }
-
-    # IO::Socket::INET was originally written to treat socket families, types,
-    # and protocols as integers. For compatibility reasons, these are still
-    # exposed as such, but the following methods are to be removed in v6.e.
-
-    method family(::?CLASS:D: --> Int:D) { $!family.value }
-
-    method type(::?CLASS:D: --> Int:D) { $!type.value }
-
-    method proto(::?CLASS:D: --> Int:D) {
-        Rakudo::Deprecations.DEPRECATED:
-            'IO::Socket::INET.protocol',
-            '2020.FUTURE', # FIXME
-            '6.e',
-            :what<IO::Socket::INET.proto>;
-        $!protocol.value
-    }
-
-    method protocol(::?CLASS:D: --> Int:D) { $!protocol.value }
 }
 
 # vim: expandtab shiftwidth=4
