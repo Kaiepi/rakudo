@@ -28,7 +28,7 @@ my class IO::Socket::INET does IO::Socket {
     multi method new(
         Bool:D           :listen($listening)! where ?*,
         Str              :$localhost,
-        Int              :$localport,
+        Int:D            :$localport          = 0,
         SocketFamily:D   :$family             = PF_UNSPEC,
         SocketType:D     :$type               = SOCK_STREAM,
         SocketProtocol:D :$protocol           = IPPROTO_ANY,
@@ -41,14 +41,7 @@ my class IO::Socket::INET does IO::Socket {
             :$family, :$type, :$protocol, :$listening, |%rest
         )!LISTEN($localhost, $localport, :$resolver, :$method)
     }
-    method !LISTEN(
-        ::?CLASS:D:
-        Str:_           $host       is copy,
-        Int:_           $port       is copy,
-        IO::Resolver:D :$resolver!,
-        Str:D          :$method!
-        --> ::?CLASS:D
-    ) {
+    method !LISTEN(::?CLASS:D: Str:_ $host is copy, Int:D $port, IO::Resolver:D :$resolver!, Str:D :$method! --> ::?CLASS:D) {
         nqp::bindattr(self, $?CLASS, '$!PIO', nqp::socket(1));
         if $!family == PF_UNIX {
             # XXX: Doesn't belong here.
@@ -62,7 +55,6 @@ my class IO::Socket::INET does IO::Socket {
         }
         else {
             $host //= '0.0.0.0';
-            $port //= 0;
             &*BIND($host, $resolver."$method"($host, $port,
                 :$!family, :$!type, :$!protocol,
                 :passive,
