@@ -2,10 +2,6 @@ my class IO::Socket::INET does IO::Socket {
     my module PIO {
         constant MIN_PORT = 0;
         constant MAX_PORT = 65_535; # RFC 793: TCP/UDP port limit
-
-        subset Family   of Int:D where any SocketFamily.^enum_value_list;
-        subset Type     of Int:D where any SocketType.^enum_value_list;
-        subset Protocol of Int:D where any SocketProtocol.^enum_value_list;
     }
 
     has Int  $.backlog;
@@ -42,20 +38,14 @@ my class IO::Socket::INET does IO::Socket {
 
     # Create a new socket that listens on an explicit IP address
     multi method new(
-        Bool:D            :$listen!          where ?*,
+        Bool:D            :listen($listening)! where ?*,
         IO::Address::IP:D :$address!,
-        PIO::Family       :$family           = $address.family.value,
-        PIO::Type         :$type             = nqp::const::SOCKET_TYPE_STREAM,
-        PIO::Protocol     :proto(:$protocol) = nqp::const::SOCKET_PROTOCOL_ANY,
+        SocketFamily:D    :$family             = $address.family.value,
+        SocketType:D      :$type               = SOCK_STREAM,
+        SocketProtocol:D  :$protocol           = IPPROTO_ANY,
                           *%rest
     ) {
-        self.bless(
-            family    => SocketFamily($family),
-            type      => SocketType($type),
-            protocol  => SocketProtocol($protocol),
-            listening => $listen,
-            |%rest,
-        )!LISTEN-DIRECT($address)
+        self.bless(:$family, :$type, :$protocol, :$listening, |%rest)!LISTEN-DIRECT($address)
     }
     method !LISTEN-DIRECT(::?CLASS:D: IO::Address::IP:D $address --> ::?CLASS:D) {
         nqp::bindattr(self, $?CLASS, '$!PIO', nqp::socket(1));
@@ -70,23 +60,19 @@ my class IO::Socket::INET does IO::Socket {
 
     # Create new socket that listens on $localhost:$localport
     multi method new(
-        Bool:D         :$listen!          where ?*,
-        Str            :$localhost,
-        Int            :$localport,
-        PIO::Family    :$family           = nqp::const::SOCKET_FAMILY_UNSPEC,
-        PIO::Type      :$type             = nqp::const::SOCKET_TYPE_STREAM,
-        PIO::Protocol  :proto(:$protocol) = nqp::const::SOCKET_PROTOCOL_ANY,
-        IO::Resolver:D :$resolver         = $*RESOLVER,
-        Str:D          :$method           = 'resolve',
-                       *%rest,
+        Bool:D           :listen($listening)! where ?*,
+        Str              :$localhost,
+        Int              :$localport,
+        SocketFamily:D   :$family             = PF_UNSPEC,
+        SocketType:D     :$type               = SOCK_STREAM,
+        SocketProtocol:D :$protocol           = IPPROTO_ANY,
+        IO::Resolver:D   :$resolver           = $*RESOLVER,
+        Str:D            :$method             = 'resolve',
+                         *%rest,
         --> IO::Socket::INET:D
     ) {
         self.bless(
-            family    => SocketFamily($family),
-            type      => SocketType($type),
-            protocol  => SocketProtocol($protocol),
-            listening => $listen,
-            |%rest,
+            :$family, :$type, :$protocol, :$listening, |%rest
         )!LISTEN($localhost, $localport, :$resolver, :$method)
     }
     method !LISTEN(
@@ -135,17 +121,12 @@ my class IO::Socket::INET does IO::Socket {
     # Open new connection to socket on an explicit IP address
     multi method new(
         IO::Address::IP:D :$address!,
-        PIO::Family       :$family           = $address.family.value,
-        PIO::Type         :$type             = nqp::const::SOCKET_TYPE_STREAM,
-        PIO::Protocol     :proto(:$protocol) = nqp::const::SOCKET_PROTOCOL_ANY,
+        SocketFamily:D    :$family    = $address.family,
+        SocketType:D      :$type      = SOCK_STREAM,
+        SocketProtocol:D  :$protocol  = IPPROTO_ANY,
                           *%rest
     ) {
-        self.bless(
-            family    => SocketFamily($family),
-            type      => SocketType($type),
-            protocol  => SocketProtocol($protocol),
-            |%rest,
-        )!CONNECT-DIRECT($address)
+        self.bless(:$family, :$type, :$protocol, |%rest)!CONNECT-DIRECT($address)
     }
     method !CONNECT-DIRECT(::?CLASS:D: IO::Address::IP:D $address --> ::?CLASS:D) {
         nqp::bindattr(self, $?CLASS, '$!PIO', nqp::socket(0));
@@ -159,21 +140,18 @@ my class IO::Socket::INET does IO::Socket {
 
     # Open new connection to socket on $host:$port
     multi method new(
-        Str:D          :$host!,
-        Int            :$port,
-        PIO::Family    :$family           = nqp::const::SOCKET_FAMILY_UNSPEC,
-        PIO::Type      :$type             = nqp::const::SOCKET_TYPE_STREAM,
-        PIO::Protocol  :proto(:$protocol) = nqp::const::SOCKET_PROTOCOL_ANY,
-        IO::Resolver:D :$resolver         = $*RESOLVER,
-        Str:D          :$method           = 'lookup',
-                       *%rest,
+        Str:D            :$host!,
+        Int              :$port,
+        SocketFamily:D   :$family   = PF_UNSPEC,
+        SocketType:D     :$type     = SOCK_STREAM,
+        SocketProtocol:D :$protocol = IPPROTO_ANY,
+        IO::Resolver:D   :$resolver = $*RESOLVER,
+        Str:D            :$method   = 'lookup',
+                         *%rest,
         --> IO::Socket::INET:D
     ) {
         self.bless(
-            family   => SocketFamily($family),
-            type     => SocketType($type),
-            protocol => SocketProtocol($protocol),
-            |%rest,
+            :$family, :$type, :$protocol, |%rest
         )!CONNECT($host, $port, :$resolver, :$method)
     }
     method !CONNECT(::?CLASS:D: Str:D $host, Int:_ $port, IO::Resolver:D :$resolver!, Str:D :$method! --> ::?CLASS:D) {
@@ -232,9 +210,7 @@ my class IO::Socket::INET does IO::Socket {
         Str:D          :$method   = 'lookup'
         --> ::?CLASS:D
     ) {
-        self.new:
-            :$host, :$port, :family($family.value),
-            :$resolver, :$method
+        self.new: :$host, :$port, :$family, :$resolver, :$method
     }
 
     proto method listen(|) {*}
@@ -244,7 +220,7 @@ my class IO::Socket::INET does IO::Socket {
         SocketFamily:D    :$family   = $address.family,
         --> ::?CLASS:D
     ) {
-        self.new: :listen, :$address, :family($family.value)
+        self.new: :listen, :$address, :$family
     }
     multi method listen(
         ::?CLASS:U:
@@ -255,10 +231,7 @@ my class IO::Socket::INET does IO::Socket {
         Str:D          :$method     = 'resolve',
         --> ::?CLASS:D
     ) {
-        self.new:
-            :listen,
-            :$localhost, :$localport, :family($family.value),
-            :$resolver, :$method
+        self.new: :listen, :$localhost, :$localport, :$family, :$resolver, :$method
     }
 
     method accept() {
