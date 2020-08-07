@@ -157,8 +157,8 @@ my class IO::Socket::INET does IO::Socket {
     }
     multi method connect(
         ::?CLASS:U:
-        Str()           $host,
-        Int()           $port,
+        Str:D           $host,
+        Int:D           $port,
         SocketFamily:D :$family   = PF_UNSPEC,
         IO::Resolver:D :$resolver = $*RESOLVER,
         Str:D          :$method   = 'lookup'
@@ -178,8 +178,8 @@ my class IO::Socket::INET does IO::Socket {
     }
     multi method listen(
         ::?CLASS:U:
-        Str()           $localhost,
-        Int()           $localport,
+        Str:_           $localhost,
+        Int:D           $localport  = 0,
         SocketFamily:D :$family     = PF_UNSPEC,
         IO::Resolver:D :$resolver   = $*RESOLVER,
         Str:D          :$method     = 'resolve',
