@@ -202,8 +202,8 @@ my class IO::Socket::Async {
     }
     multi method connect(
         ::?CLASS:U:
-        Str()           $host,
-        Int()           $port      where Port,
+        Str:D           $host,
+        Port            $port,
         SocketFamily:D :$family    = PF_UNSPEC,
         IO::Resolver:D :$resolver  = $*RESOLVER,
         Str:D          :$method    = 'lookup',
@@ -405,8 +405,8 @@ my class IO::Socket::Async {
     }
     multi method listen(
         ::?CLASS:U:
-        Str()           $host,
-        Int()           $port      where Port = 0,
+        Str:D           $host,
+        Port            $port      = 0,
         Int()           $backlog   = 128,
         SocketFamily:D :$family    = PF_UNSPEC,
         IO::Resolver:D :$resolver  = $*RESOLVER,
@@ -516,8 +516,8 @@ my class IO::Socket::Async {
     }
     multi method bind-udp(
         ::?CLASS:U:
-        Str()           $host,
-        Int()           $port       where Port = 0,
+        Str:D           $host,
+        Port            $port       = 0,
         SocketFamily:D :$family     = PF_UNSPEC,
         IO::Resolver:D :$resolver   = $*RESOLVER,
         Str:D          :$method     = 'resolve',
@@ -564,8 +564,8 @@ my class IO::Socket::Async {
     }
     multi method print-to(
         ::?CLASS:D:
-        Str()           $host,
-        Int()           $port      where Port,
+        Str:D           $host,
+        Port            $port,
         Str()           $str,
         IO::Resolver:D :$resolver  = $*RESOLVER,
         Str:D          :$method    = 'lookup',
@@ -595,8 +595,8 @@ my class IO::Socket::Async {
     }
     multi method write-to(
         ::?CLASS:D:
-        Str()           $host,
-        Int()           $port      where Port,
+        Str:D           $host,
+        Port            $port,
         Blob            $b,
         IO::Resolver:D :$resolver  = $*RESOLVER,
         Str:D          :$method    = 'lookup',
