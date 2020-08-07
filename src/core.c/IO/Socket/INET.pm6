@@ -74,7 +74,7 @@ my class IO::Socket::INET does IO::Socket {
 
     # Create new socket that listens on $localhost:$localport
     multi method new(
-        Bool           :$listen!          where .so,
+        Bool:D         :$listen!          where ?*,
         Str            :$localhost,
         Int            :$localport,
         PIO::Family    :$family           = nqp::const::SOCKET_FAMILY_UNSPEC,
