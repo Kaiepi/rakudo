@@ -1,4 +1,6 @@
 my class IO::Socket::INET does IO::Socket {
+    my constant Port = IO::Address::IP::Port;
+
     has Int  $.backlog;
     has Bool $.listening;
 
@@ -28,7 +30,7 @@ my class IO::Socket::INET does IO::Socket {
     multi method new(
         Bool:D           :listen($listening)! where ?*,
         Str              :$localhost,
-        Int:D            :$localport          = 0,
+        Port             :$localport          = 0,
         SocketFamily:D   :$family             = PF_UNSPEC,
         SocketType:D     :$type               = SOCK_STREAM,
         SocketProtocol:D :$protocol           = IPPROTO_ANY,
@@ -97,7 +99,7 @@ my class IO::Socket::INET does IO::Socket {
     # Open new connection to socket on $host:$port
     multi method new(
         Str:D            :$host!,
-        Int:D            :$port!,
+        Port             :$port!,
         SocketFamily:D   :$family   = PF_UNSPEC,
         SocketType:D     :$type     = SOCK_STREAM,
         SocketProtocol:D :$protocol = IPPROTO_ANY,
@@ -157,7 +159,7 @@ my class IO::Socket::INET does IO::Socket {
     multi method connect(
         ::?CLASS:U:
         Str:D           $host,
-        Int:D           $port,
+        Port            $port,
         SocketFamily:D :$family   = PF_UNSPEC,
         IO::Resolver:D :$resolver = $*RESOLVER,
         Str:D          :$method   = 'lookup'
@@ -178,7 +180,7 @@ my class IO::Socket::INET does IO::Socket {
     multi method listen(
         ::?CLASS:U:
         Str:_           $localhost,
-        Int:D           $localport  = 0,
+        Port            $localport  = 0,
         SocketFamily:D :$family     = PF_UNSPEC,
         IO::Resolver:D :$resolver   = $*RESOLVER,
         Str:D          :$method     = 'resolve',
