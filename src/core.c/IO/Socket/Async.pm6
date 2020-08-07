@@ -186,8 +186,40 @@ my class IO::Socket::Async {
         try $!close-vow.keep(True);
     }
 
-    method connect(
-        IO::Socket::Async:U:
+    proto method connect(|) {*}
+    multi method connect(
+        ::?CLASS:U:
+        IO::Address::IP:D  $address,
+        SocketFamily:D    :$family    = $address.family,
+                          :$enc       = 'utf-8',
+                          :$scheduler = $*SCHEDULER,
+    ) {
+        my $p = Promise.new;
+        my $v = $p.vow;
+        my $encoding = Encoding::Registry.find($enc);
+        nqp::asyncconnect(
+            $scheduler.queue,
+            -> Str:_ $error is raw, Mu $VMIO is raw {
+                with $error {
+                    $v.break: $error;
+                }
+                else {
+                    my $connection := nqp::create(self);
+                    nqp::bindattr($connection, IO::Socket::Async, '$!VMIO', $VMIO);
+                    nqp::bindattr($connection, IO::Socket::Async, '$!enc', $encoding.name);
+                    nqp::bindattr($connection, IO::Socket::Async, '$!encoder', $encoding.encoder);
+                    nqp::bindattr($connection, IO::Socket::Async, '$!family', nqp::decont($family));
+                    $connection.&setup-close;
+                    $v.keep: $connection;
+                }
+            },
+            nqp::getattr(nqp::decont($address), IO::Address, '$!VM-address'),
+            nqp::unbox_i($family.value),
+            SocketCancellation);
+        $p
+    }
+    multi method connect(
+        ::?CLASS:U:
         Str()           $host,
         Int()           $port      where Port,
         SocketFamily:D :$family    = PF_UNSPEC,
@@ -271,10 +303,12 @@ my class IO::Socket::Async {
     my class SocketListenerTappable does Tappable {
         has                $!host;
         has                $!port;
-        has SocketFamily:D $!family   is required;
-        has                &!bind     is required;
-        has IO::Resolver:D $!resolver is required;
-        has Str:D          $!method   is required;
+        has SocketFamily:_ $!family;
+        has                &!bind;
+        has IO::Resolver:_ $!resolver;
+        has Str:_          $!method;
+
+        has IO::Address:_ $!address;
 
         has $!backlog;
         has $!encoding;
@@ -283,8 +317,9 @@ my class IO::Socket::Async {
         method new(*%args) { self.CREATE!SET-SELF(|%args) }
 
         method !SET-SELF(
-            :$!host, :$!port, :$!family,
-            :&!bind, :$!resolver, :$!method,
+            :$!host, :$!port, SocketFamily:_ :$!family,
+            :&!bind, IO::Resolver:_ :$!resolver, Str:_ :$!method,
+            IO::Address:_ :$!address,
             :$!backlog, :$!encoding, :$!scheduler,
         ) { self }
 
@@ -297,12 +332,7 @@ my class IO::Socket::Async {
             my $VMIO-vow   = $VMIO-tobe.vow;
             my $family-vow = $family.vow;
             $lock.protect: {
-                my $cancellation := &!bind($!host, $!resolver."$!method"($!host, $!port,
-                    family   => $!family,
-                    type     => SOCK_STREAM,
-                    protocol => IPPROTO_TCP,
-                    passive  => True,
-                ), -> IO::Address::Info:D $info {
+                my $cancellation := do with $!address {
                     nqp::asynclisten(
                         $!scheduler.queue(:hint-affinity),
                         -> Str:_ $error is raw, Mu $VMIO-passive is raw, Mu $VMIO-active is raw {
@@ -316,30 +346,70 @@ my class IO::Socket::Async {
                                 }
                                 elsif $VMIO-passive {
                                     $VMIO-vow.keep: $VMIO-passive;
-                                    $family-vow.keep: $info.family;
+                                    $family-vow.keep: nqp::decont($!family);
                                 }
                                 else {
                                     my IO::Socket::Async:D $connection := nqp::create(IO::Socket::Async);
                                     nqp::bindattr($connection, IO::Socket::Async, '$!VMIO', $VMIO-active);
                                     nqp::bindattr($connection, IO::Socket::Async, '$!enc', $!encoding.name);
                                     nqp::bindattr($connection, IO::Socket::Async, '$!encoder', $!encoding.encoder);
-                                    nqp::bindattr($connection, IO::Socket::Async, '$!family', $info.family);
+                                    nqp::bindattr($connection, IO::Socket::Async, '$!family', nqp::decont($!family));
                                     $connection.&setup-close;
                                     emit $connection;
                                 }
                             }
                         },
-                        nqp::getattr($info.address, IO::Address, '$!VM-address'),
-                        nqp::unbox_i($info.family.value),
+                        nqp::getattr(nqp::decont($!address), IO::Address, '$!VM-address'),
+                        nqp::unbox_i($!family.value),
                         $!backlog,
                         SocketCancellation);
-                });
+                } else {
+                    &!bind($!host, $!resolver."$!method"($!host, $!port,
+                        family   => $!family,
+                        type     => SOCK_STREAM,
+                        protocol => IPPROTO_TCP,
+                        passive  => True,
+                    ), -> IO::Address::Info:D $info {
+                        nqp::asynclisten(
+                            $!scheduler.queue(:hint-affinity),
+                            -> Str:_ $error is raw, Mu $VMIO-passive is raw, Mu $VMIO-active is raw {
+                                $lock.protect: {
+                                    if $finished {
+                                        # do nothing
+                                    }
+                                    orwith $error {
+                                        quit X::AdHoc.new: payload => $error;
+                                        $finished = 1;
+                                    }
+                                    elsif $VMIO-passive {
+                                        $VMIO-vow.keep: $VMIO-passive;
+                                        $family-vow.keep: $info.family;
+                                    }
+                                    else {
+                                        my $connection := nqp::create(IO::Socket::Async);
+                                        nqp::bindattr($connection, IO::Socket::Async, '$!VMIO', $VMIO-active);
+                                        nqp::bindattr($connection, IO::Socket::Async, '$!enc', $!encoding.name);
+                                        nqp::bindattr($connection, IO::Socket::Async, '$!encoder', $!encoding.encoder);
+                                        nqp::bindattr($connection, IO::Socket::Async, '$!family', $info.family);
+                                        $connection.&setup-close;
+                                        emit $connection;
+                                    }
+                                }
+                            },
+                            nqp::getattr($info.address, IO::Address, '$!VM-address'),
+                            nqp::unbox_i($info.family.value),
+                            $!backlog,
+                            SocketCancellation);
+                    });
+                }
+
                 tap $tap := ListenSocket.new: {
                     my $p = Promise.new;
                     my $v = $p.vow;
                     nqp::cancelnotify($cancellation, $!scheduler.queue, { $v.keep(True); });
                     $p
                 }, :$VMIO-tobe, :$family;
+
                 CATCH {
                     default {
                         tap $tap := ListenSocket.new: { Nil }, :$VMIO-tobe, :$family unless $tap;
@@ -355,8 +425,22 @@ my class IO::Socket::Async {
         method serial(--> True) { }
     }
 
-    method listen(
-        IO::Socket::Async:U:
+    proto method listen(|) {*}
+    multi method listen(
+        ::?CLASS:U:
+        IO::Address::IP:D  $address,
+        Int()              $backlog   = 128,
+        SocketFamily:D    :$family    = $address.family,
+                          :$enc       = 'utf-8',
+                          :$scheduler = $*SCHEDULER,
+    ) {
+        my $encoding = Encoding::Registry.find($enc);
+        Supply.new: SocketListenerTappable.new:
+            :$address, :$family,
+            :$backlog, :$encoding, :$scheduler
+    }
+    multi method listen(
+        ::?CLASS:U:
         Str()           $host,
         Int()           $port      where Port,
         Int()           $backlog   = 128,
@@ -432,8 +516,42 @@ my class IO::Socket::Async {
         await $p
     }
 
-    method bind-udp(
-        IO::Socket::Async:U:
+    proto method bind-udp(|) {*}
+    multi method bind-udp(
+        ::?CLASS:U:
+        IO::Address::IP:D  $address,
+        SocketFamily:D    :$family     = $address.family,
+                          :$broadcast,
+                          :$enc        = 'utf-8',
+                          :$scheduler  = $*SCHEDULER,
+    ) {
+        my $p = Promise.new;
+        my $encoding = Encoding::Registry.find($enc);
+        nqp::asyncudp(
+            $scheduler.queue(:hint-affinity),
+            -> Str:_ $error is raw, Mu $VMIO is raw {
+                with $error {
+                    $p.break: $error;
+                }
+                else {
+                    my ::?CLASS:D $connection := nqp::create(self);
+                    nqp::bindattr($connection, IO::Socket::Async, '$!VMIO', $VMIO);
+                    nqp::bindattr_i($connection, IO::Socket::Async, '$!udp', 1);
+                    nqp::bindattr($connection, IO::Socket::Async, '$!enc', $encoding.name);
+                    nqp::bindattr($connection, IO::Socket::Async, '$!encoder', $encoding.encoder);
+                    nqp::bindattr($connection, IO::Socket::Async, '$!family', nqp::decont($family));
+                    $connection.&setup-close;
+                    $p.keep: $connection;
+                }
+            },
+            nqp::getattr(nqp::decont($address), IO::Address, '$!VM-address'),
+            nqp::unbox_i($family.value),
+            $broadcast ?? 1 !! 0,
+            SocketCancellation);
+        await $p
+    }
+    multi method bind-udp(
+        ::?CLASS:U:
         Str()           $host,
         Int()           $port       where Port,
         SocketFamily:D :$family     = PF_UNSPEC,
@@ -476,8 +594,12 @@ my class IO::Socket::Async {
         await $p
     }
 
-    method print-to(
-        IO::Socket::Async:D:
+    proto method print-to(|) {*}
+    multi method print-to(::?CLASS:D: IO::Address::IP:D $address, Str() $str, :$scheduler = $*SCHEDULER) {
+        self.write-to: $address, $!encoder.encode-chars($str), :$scheduler
+    }
+    multi method print-to(
+        ::?CLASS:D:
         Str()           $host,
         Int()           $port      where Port,
         Str()           $str,
@@ -485,12 +607,30 @@ my class IO::Socket::Async {
         Str:D          :$method    = 'lookup',
                        :$scheduler = $*SCHEDULER,
     ) {
-        self.write-to: $host, $port, $!encoder.encode-chars($str),
-            :$resolver, :$method, :$scheduler
+        self.write-to: $host, $port, $!encoder.encode-chars($str), :$resolver, :$method, :$scheduler
     }
 
-    method write-to(
-        IO::Socket::Async:D:
+    proto method write-to(|) {*}
+    multi method write-to(::?CLASS:D: IO::Address::IP:D $address, Blob $b, :$scheduler = $*SCHEDULER) {
+        my $p = Promise.new;
+        my $v = $p.vow;
+        nqp::asyncwritebytesto($!VMIO,
+            $scheduler.queue,
+            -> Str:_ $error is raw, Int:_ $bytes is raw {
+                with $error {
+                    $v.break: $error;
+                }
+                else {
+                    $v.keep: $bytes;
+                }
+            },
+            nqp::getattr(nqp::decont($address), IO::Address, '$!VM-address'),
+            nqp::decont($b),
+            SocketCancellation);
+        $p
+    }
+    multi method write-to(
+        ::?CLASS:D:
         Str()           $host,
         Int()           $port      where Port,
         Blob            $b,
