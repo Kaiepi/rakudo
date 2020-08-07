@@ -230,6 +230,13 @@ my class IO::Socket::Async {
             self.bless: :&on-close, |%rest
         }
 
+        method local-address(::?CLASS:D: --> Promise:D) {
+            start given nqp::getsockname(await $!VMIO-tobe) -> [Int:D $family is raw, Mu $VM-address is raw] {
+                my IO::Address:U \T = IO::Address[SocketFamily($family)];
+                nqp::p6bindattrinvres(nqp::create(T), IO::Address, '$!VM-address', $VM-address)
+            }
+        }
+
         method native-descriptor(--> Int) {
             nqp::filenofh(await $!VMIO-tobe)
         }
@@ -363,6 +370,20 @@ my class IO::Socket::Async {
             :$host, :$port, :$family,
             :&bind, :$resolver, :$method,
             :$backlog, :$encoding, :$scheduler
+    }
+
+    method local-address(::?CLASS:D: --> IO::Address:D) {
+        given nqp::getsockname($!VMIO) -> [Int:D $family is raw, Mu $VM-address is raw] {
+            my IO::Address:U \T = IO::Address[SocketFamily($family)];
+            nqp::p6bindattrinvres(nqp::create(T), IO::Address, '$!VM-address', $VM-address)
+        }
+    }
+
+    method remote-address(::?CLASS:D: --> IO::Address:D) {
+        given nqp::getpeername($!VMIO) -> [Int:D $family is raw, Mu $VM-address is raw] {
+            my IO::Address:U \T = IO::Address[SocketFamily($family)];
+            nqp::p6bindattrinvres(nqp::create(T), IO::Address, '$!VM-address', $VM-address)
+        }
     }
 
     method native-descriptor(--> Int) {
