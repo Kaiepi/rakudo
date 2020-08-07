@@ -47,8 +47,8 @@ my class IO::Socket::INET does IO::Socket {
     # Create new socket that listens on $localhost:$localport
     multi method new(
         Bool           :$listen!          where .so,
-        Str            :$localhost        is copy,
-        Int            :$localport        is copy,
+        Str            :$localhost,
+        Int            :$localport,
         PIO::Family    :$family           = nqp::const::SOCKET_FAMILY_UNSPEC,
         PIO::Type      :$type             = nqp::const::SOCKET_TYPE_STREAM,
         PIO::Protocol  :proto(:$protocol) = nqp::const::SOCKET_PROTOCOL_ANY,
@@ -57,10 +57,6 @@ my class IO::Socket::INET does IO::Socket {
                        *%rest,
         --> IO::Socket::INET:D
     ) {
-        ($localhost, $localport) = (
-            split-host-port :host($localhost), :port($localport), :$family
-        orelse fail $_) unless $family == nqp::const::SOCKET_FAMILY_UNIX;
-
         self.bless(
             localhost => $localhost,
             localport => $localport,
@@ -69,13 +65,55 @@ my class IO::Socket::INET does IO::Socket {
             protocol  => SocketProtocol($protocol),
             listening => $listen,
             |%rest,
-        )!initialize(:$resolver, :$method)
+        )!LISTEN($localhost, $localport, :$resolver, :$method)
+    }
+    method !LISTEN(
+        ::?CLASS:D:
+        Str:_           $host       is copy,
+        Int:_           $port       is copy,
+        IO::Resolver:D :$resolver!,
+        Str:D          :$method!
+        --> ::?CLASS:D
+    ) {
+        nqp::bindattr(self, $?CLASS, '$!PIO', nqp::socket(1));
+        if $!family == PF_UNIX {
+            # XXX: Doesn't belong here.
+            my IO::Address::UNIX:D $address := IO::Address::UNIX.new: $host.IO;
+            nqp::bindsock($!PIO,
+              nqp::getattr($address, IO::Address, '$!VM-address'),
+              nqp::unbox_i($!family.value),
+              nqp::unbox_i($!type.value),
+              nqp::unbox_i($!protocol.value),
+              nqp::unbox_i($!backlog || 128));
+            self
+        }
+        orwith split-host-port :$host, :$port, :$!family -> [Str:_ $host is copy, Int:_ $port is copy] {
+            $host //= '0.0.0.0';
+            $port //= 0;
+            &*BIND($host, $resolver."$method"($host, $port,
+                :$!family, :$!type, :$!protocol,
+                :passive,
+            ), -> IO::Address::Info:D $info {
+                my Mu $result := nqp::bindsock($!PIO,
+                  nqp::getattr($info.address, IO::Address, '$!VM-address'),
+                  nqp::unbox_i($info.family.value),
+                  nqp::unbox_i($info.type.value),
+                  nqp::unbox_i($info.protocol.value),
+                  nqp::unbox_i($!backlog || 128));
+                nqp::bindattr(self, $?CLASS, '$!family', $info.family);
+                nqp::bindattr(self, $?CLASS, '$!type', $info.type);
+                nqp::bindattr(self, $?CLASS, '$!protocol', $info.protocol);
+                $result
+            });
+            self
+        }
+        else { .&fail }
     }
 
     # Open new connection to socket on $host:$port
     multi method new(
-        Str:D          :$host!            is copy,
-        Int            :$port             is copy,
+        Str:D          :$host!,
+        Int            :$port,
         PIO::Family    :$family           = nqp::const::SOCKET_FAMILY_UNSPEC,
         PIO::Type      :$type             = nqp::const::SOCKET_TYPE_STREAM,
         PIO::Protocol  :proto(:$protocol) = nqp::const::SOCKET_PROTOCOL_ANY,
@@ -84,12 +122,6 @@ my class IO::Socket::INET does IO::Socket {
                        *%rest,
         --> IO::Socket::INET:D
     ) {
-        ($host, $port) = split-host-port(
-            :$host,
-            :$port,
-            :$family,
-        ) unless $family == nqp::const::SOCKET_FAMILY_UNIX;
-
         self.bless(
             host     => $host,
             port     => $port,
@@ -97,85 +129,44 @@ my class IO::Socket::INET does IO::Socket {
             type     => SocketType($type),
             protocol => SocketProtocol($protocol),
             |%rest,
-        )!initialize(:$resolver, :$method)
+        )!CONNECT($host, $port, :$resolver, :$method)
+    }
+    method !CONNECT(::?CLASS:D: Str:D $host, Int:_ $port, IO::Resolver:D :$resolver!, Str:D :$method! --> ::?CLASS:D) {
+        nqp::bindattr(self, $?CLASS, '$!PIO', nqp::socket(0));
+        if $!family == PF_UNIX {
+            # XXX: Doesn't belong here.
+            my IO::Address::UNIX:D $address := IO::Address::UNIX.new: $host.IO;
+            nqp::connect($!PIO,
+              nqp::getattr($address, IO::Address, '$!VM-address'),
+              nqp::unbox_i($!family.value),
+              nqp::unbox_i($!type.value),
+              nqp::unbox_i($!protocol.value));
+            self
+        }
+        orwith split-host-port :$host, :$port, :$!family -> [Str:_ $host is copy, Int:_ $port is copy] {
+            &*CONNECT($host, $resolver."$method"($host, $port,
+                :$!family, :$!type, :$!protocol,
+                :passive, # For the sake of compatibility.
+            ), -> IO::Address::Info:D $info {
+                my Mu $result := nqp::connect($!PIO,
+                  nqp::getattr($info.address, IO::Address, '$!VM-address'),
+                  nqp::unbox_i($info.family.value),
+                  nqp::unbox_i($info.type.value),
+                  nqp::unbox_i($info.protocol.value));
+                nqp::bindattr(self, $?CLASS, '$!family', $info.family);
+                nqp::bindattr(self, $?CLASS, '$!type', $info.type);
+                nqp::bindattr(self, $?CLASS, '$!protocol', $info.protocol);
+                $result
+            });
+            self
+        }
+        else { .&fail }
     }
 
     # Fail if no valid parameters are passed
     multi method new() {
         fail "Nothing given for new socket to connect or bind to. "
             ~ "Invalid arguments to .new?";
-    }
-
-    method !initialize(IO::Resolver:D :$resolver!, Str:D :$method!) {
-        my $PIO := nqp::socket($!listening ?? 10 !! 0);
-
-        # Quoting perl5's SIO::INET:
-        # If Listen is defined then a listen socket is created, else if the socket type,
-        # which is derived from the protocol, is SOCK_STREAM then connect() is called.
-        if $!listening || $!localhost || $!localport {
-            if $!family == nqp::const::SOCKET_FAMILY_UNIX {
-                # XXX: Doesn't belong here.
-                my IO::Address::UNIX:D $address := IO::Address::UNIX.new: $!localhost.IO;
-                nqp::bindsock($PIO,
-                  nqp::getattr($address, IO::Address, '$!VM-address'),
-                  nqp::unbox_i($!family.value),
-                  nqp::unbox_i($!type.value),
-                  nqp::unbox_i($!protocol.value),
-                  nqp::unbox_i($!backlog || 128));
-            } else {
-                &*BIND($!localhost, $resolver."$method"($!localhost, $!localport || 0,
-                    :$!family, :$!type, :$!protocol,
-                    :passive,
-                ), -> IO::Address::Info:D $info {
-                    my Mu $result := nqp::bindsock($PIO,
-                      nqp::getattr($info.address, IO::Address, '$!VM-address'),
-                      nqp::unbox_i($info.family.value),
-                      nqp::unbox_i($info.type.value),
-                      nqp::unbox_i($info.protocol.value),
-                      nqp::unbox_i($!backlog || 128));
-                    nqp::bindattr(self, $?CLASS, '$!family', $info.family);
-                    nqp::bindattr(self, $?CLASS, '$!type', $info.type);
-                    nqp::bindattr(self, $?CLASS, '$!protocol', $info.protocol);
-                    $result
-                });
-            }
-        }
-
-        if $!listening {
-#?if !js
-            $!localport = nqp::getport($PIO)
-                   unless $!localport || ($!family == nqp::const::SOCKET_FAMILY_UNIX);
-#?endif
-        }
-        elsif $!type == nqp::const::SOCKET_TYPE_STREAM {
-            if $!family == nqp::const::SOCKET_FAMILY_UNIX {
-                # XXX: Doesn't belong here.
-                my IO::Address::UNIX:D $address := IO::Address::UNIX.new: $!host.IO;
-                nqp::connect($PIO,
-                  nqp::getattr($address, IO::Address, '$!VM-address'),
-                  nqp::unbox_i($!family.value),
-                  nqp::unbox_i($!type.value),
-                  nqp::unbox_i($!protocol.value));
-            } else {
-                &*CONNECT($!host, $resolver."$method"($!host, $!port,
-                    :$!family, :$!type, :$!protocol,
-                    :passive, # For the sake of compatibility.
-                ), -> IO::Address::Info:D $info {
-                    my Mu $result := nqp::connect($PIO,
-                      nqp::getattr($info.address, IO::Address, '$!VM-address'),
-                      nqp::unbox_i($info.family.value),
-                      nqp::unbox_i($info.type.value),
-                      nqp::unbox_i($info.protocol.value));
-                    nqp::bindattr(self, $?CLASS, '$!family', $info.family);
-                    nqp::bindattr(self, $?CLASS, '$!type', $info.type);
-                    nqp::bindattr(self, $?CLASS, '$!protocol', $info.protocol);
-                    $result
-                });
-            }
-        }
-
-        nqp::bindattr(self, $?CLASS, '$!PIO', $PIO);
-        self;
     }
 
     method connect(
