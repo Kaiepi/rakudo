@@ -442,7 +442,7 @@ my class IO::Socket::Async {
     multi method listen(
         ::?CLASS:U:
         Str()           $host,
-        Int()           $port      where Port,
+        Int()           $port      where Port = 0,
         Int()           $backlog   = 128,
         SocketFamily:D :$family    = PF_UNSPEC,
         IO::Resolver:D :$resolver  = $*RESOLVER,
@@ -553,7 +553,7 @@ my class IO::Socket::Async {
     multi method bind-udp(
         ::?CLASS:U:
         Str()           $host,
-        Int()           $port       where Port,
+        Int()           $port       where Port = 0,
         SocketFamily:D :$family     = PF_UNSPEC,
         IO::Resolver:D :$resolver   = $*RESOLVER,
         Str:D          :$method     = 'resolve',
