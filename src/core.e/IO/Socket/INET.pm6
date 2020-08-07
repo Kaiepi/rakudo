@@ -97,7 +97,7 @@ my class IO::Socket::INET does IO::Socket {
     # Open new connection to socket on $host:$port
     multi method new(
         Str:D            :$host!,
-        Int              :$port,
+        Int:D            :$port!,
         SocketFamily:D   :$family   = PF_UNSPEC,
         SocketType:D     :$type     = SOCK_STREAM,
         SocketProtocol:D :$protocol = IPPROTO_ANY,
@@ -110,7 +110,7 @@ my class IO::Socket::INET does IO::Socket {
             :$family, :$type, :$protocol, |%rest
         )!CONNECT($host, $port, :$resolver, :$method)
     }
-    method !CONNECT(::?CLASS:D: Str:D $host, Int:_ $port, IO::Resolver:D :$resolver!, Str:D :$method! --> ::?CLASS:D) {
+    method !CONNECT(::?CLASS:D: Str:D $host, Int:D $port, IO::Resolver:D :$resolver!, Str:D :$method! --> ::?CLASS:D) {
         nqp::bindattr(self, $?CLASS, '$!PIO', nqp::socket(0));
         if $!family == PF_UNIX {
             # XXX: Doesn't belong here.
