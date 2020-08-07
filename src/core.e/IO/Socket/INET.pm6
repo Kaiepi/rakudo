@@ -1,40 +1,6 @@
 my class IO::Socket::INET does IO::Socket {
-    my module PIO {
-        constant MIN_PORT = 0;
-        constant MAX_PORT = 65_535; # RFC 793: TCP/UDP port limit
-    }
-
     has Int  $.backlog;
     has Bool $.listening;
-
-    # XXX: this could be a bit smarter about how it deals with unspecified
-    # families...
-    my sub split-host-port(:$host is copy, :$port is copy, :$family) {
-        if ($host) {
-            my ($split-host, $split-port) = $family == nqp::const::SOCKET_FAMILY_INET6
-                ?? v6-split($host)
-                !! v4-split($host);
-
-            if $split-port {
-                $host = $split-host.Str;
-                $port //= $split-port.Int
-            }
-        }
-
-        fail "Invalid port $port.gist(). Must be {PIO::MIN_PORT}..{PIO::MAX_PORT}"
-            unless $port.defined and PIO::MIN_PORT <= $port <= PIO::MAX_PORT;
-
-        return ($host, $port);
-    }
-
-    my sub v4-split($uri) {
-        return $uri.split(':', 2);
-    }
-
-    my sub v6-split($uri) {
-        my ($host, $port) = ($uri ~~ /^'[' (.+) ']' \: (\d+)$/)[0,1];
-        return $host ?? ($host, $port) !! $uri;
-    }
 
     # Create a new socket that listens on an explicit IP address
     multi method new(
@@ -93,9 +59,8 @@ my class IO::Socket::INET does IO::Socket {
               nqp::unbox_i($!type.value),
               nqp::unbox_i($!protocol.value),
               nqp::unbox_i($!backlog || 128));
-            self
         }
-        orwith split-host-port :$host, :$port, :$!family -> [Str:_ $host is copy, Int:_ $port is copy] {
+        else {
             $host //= '0.0.0.0';
             $port //= 0;
             &*BIND($host, $resolver."$method"($host, $port,
@@ -113,15 +78,14 @@ my class IO::Socket::INET does IO::Socket {
                 nqp::bindattr(self, $?CLASS, '$!protocol', $info.protocol);
                 $result
             });
-            self
         }
-        else { .&fail }
+        self
     }
 
     # Open new connection to socket on an explicit IP address
     multi method new(
         IO::Address::IP:D :$address!,
-        SocketFamily:D    :$family    = $address.family,
+        SocketFamily:D    :$family    = $address.family.value,
         SocketType:D      :$type      = SOCK_STREAM,
         SocketProtocol:D  :$protocol  = IPPROTO_ANY,
                           *%rest
@@ -164,9 +128,8 @@ my class IO::Socket::INET does IO::Socket {
               nqp::unbox_i($!family.value),
               nqp::unbox_i($!type.value),
               nqp::unbox_i($!protocol.value));
-            self
         }
-        orwith split-host-port :$host, :$port, :$!family -> [Str:_ $host is copy, Int:_ $port is copy] {
+        else {
             &*CONNECT($host, $resolver."$method"($host, $port,
                 :$!family, :$!type, :$!protocol,
                 :passive, # For the sake of compatibility.
@@ -181,9 +144,8 @@ my class IO::Socket::INET does IO::Socket {
                 nqp::bindattr(self, $?CLASS, '$!protocol', $info.protocol);
                 $result
             });
-            self
         }
-        else { .&fail }
+        self
     }
 
     # Fail if no valid parameters are passed
