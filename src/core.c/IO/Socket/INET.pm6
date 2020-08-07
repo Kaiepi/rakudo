@@ -44,6 +44,34 @@ my class IO::Socket::INET does IO::Socket {
         return $host ?? ($host, $port) !! $uri;
     }
 
+    # Create a new socket that listens on an explicit IP address
+    multi method new(
+        Bool:D            :$listen!          where ?*,
+        IO::Address::IP:D :$address!,
+        PIO::Family       :$family           = $address.family.value,
+        PIO::Type         :$type             = nqp::const::SOCKET_TYPE_STREAM,
+        PIO::Protocol     :proto(:$protocol) = nqp::const::SOCKET_PROTOCOL_ANY,
+                          *%rest
+    ) {
+        self.bless(
+            family    => SocketFamily($family),
+            type      => SocketType($type),
+            protocol  => SocketProtocol($protocol),
+            listening => $listen,
+            |%rest,
+        )!LISTEN-DIRECT($address)
+    }
+    method !LISTEN-DIRECT(::?CLASS:D: IO::Address::IP:D $address --> ::?CLASS:D) {
+        nqp::bindattr(self, $?CLASS, '$!PIO', nqp::socket(1));
+        nqp::bindsock($!PIO,
+          nqp::getattr(nqp::decont($address), IO::Address, '$!VM-address'),
+          nqp::unbox_i($!family.value),
+          nqp::unbox_i($!type.value),
+          nqp::unbox_i($!protocol.value),
+          nqp::unbox_i($!backlog || 128));
+        self
+    }
+
     # Create new socket that listens on $localhost:$localport
     multi method new(
         Bool           :$listen!          where .so,
@@ -110,6 +138,31 @@ my class IO::Socket::INET does IO::Socket {
         else { .&fail }
     }
 
+    # Open new connection to socket on an explicit IP address
+    multi method new(
+        IO::Address::IP:D :$address!,
+        PIO::Family       :$family           = $address.family.value,
+        PIO::Type         :$type             = nqp::const::SOCKET_TYPE_STREAM,
+        PIO::Protocol     :proto(:$protocol) = nqp::const::SOCKET_PROTOCOL_ANY,
+                          *%rest
+    ) {
+        self.bless(
+            family    => SocketFamily($family),
+            type      => SocketType($type),
+            protocol  => SocketProtocol($protocol),
+            |%rest,
+        )!CONNECT-DIRECT($address)
+    }
+    method !CONNECT-DIRECT(::?CLASS:D: IO::Address::IP:D $address --> ::?CLASS:D) {
+        nqp::bindattr(self, $?CLASS, '$!PIO', nqp::socket(0));
+        nqp::connect($!PIO,
+          nqp::getattr(nqp::decont($address), IO::Address, '$!VM-address'),
+          nqp::unbox_i($!family.value),
+          nqp::unbox_i($!type.value),
+          nqp::unbox_i($!protocol.value));
+        self
+    }
+
     # Open new connection to socket on $host:$port
     multi method new(
         Str:D          :$host!,
@@ -169,26 +222,46 @@ my class IO::Socket::INET does IO::Socket {
             ~ "Invalid arguments to .new?";
     }
 
-    method connect(
-        IO::Socket::INET:U:
+    proto method connect(|) {*}
+    multi method connect(
+        ::?CLASS:U:
+        IO::Address::IP:D  $address,
+        SocketFamily:D    :$family   = $address.family,
+        --> ::?CLASS:D
+    ) {
+        self.new: :$address, :family($family.value)
+    }
+    multi method connect(
+        ::?CLASS:U:
         Str()           $host,
         Int()           $port,
         SocketFamily:D :$family   = PF_UNSPEC,
         IO::Resolver:D :$resolver = $*RESOLVER,
         Str:D          :$method   = 'lookup'
+        --> ::?CLASS:D
     ) {
         self.new:
             :$host, :$port, :family($family.value),
             :$resolver, :$method
     }
 
-    method listen(
-        IO::Socket::INET:U:
+    proto method listen(|) {*}
+    multi method listen(
+        ::?CLASS:U:
+        IO::Address::IP:D  $address,
+        SocketFamily:D    :$family   = $address.family,
+        --> ::?CLASS:D
+    ) {
+        self.new: :listen, :$address, :family($family.value)
+    }
+    multi method listen(
+        ::?CLASS:U:
         Str()           $localhost,
         Int()           $localport,
         SocketFamily:D :$family     = PF_UNSPEC,
         IO::Resolver:D :$resolver   = $*RESOLVER,
         Str:D          :$method     = 'resolve',
+        --> ::?CLASS:D
     ) {
         self.new:
             :listen,
