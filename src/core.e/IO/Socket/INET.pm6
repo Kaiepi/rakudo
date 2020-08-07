@@ -124,7 +124,6 @@ my class IO::Socket::INET does IO::Socket {
         else {
             &*CONNECT($host, $resolver."$method"($host, $port,
                 :$!family, :$!type, :$!protocol,
-                :passive, # For the sake of compatibility.
             ), -> IO::Address::Info:D $info {
                 my Mu $result := nqp::connect($!PIO,
                   nqp::getattr($info.address, IO::Address, '$!VM-address'),
