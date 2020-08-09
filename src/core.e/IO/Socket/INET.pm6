@@ -29,7 +29,7 @@ my class IO::Socket::INET does IO::Socket {
     # Create new socket that listens on $localhost:$localport
     multi method new(
         Bool:D           :listen($listening)! where ?*,
-        Str              :$localhost,
+        Str:_            :$localhost,
         Port             :$localport          = 0,
         SocketFamily:D   :$family             = PF_UNSPEC,
         SocketType:D     :$type               = SOCK_STREAM,
@@ -43,7 +43,7 @@ my class IO::Socket::INET does IO::Socket {
             :$family, :$type, :$protocol, :$listening, |%rest
         )!LISTEN($localhost, $localport, :$resolver, :$method)
     }
-    method !LISTEN(::?CLASS:D: Str:_ $host is copy, Int:D $port, IO::Resolver:D :$resolver!, Str:D :$method! --> ::?CLASS:D) {
+    method !LISTEN(::?CLASS:D: Str:_ $host, Int:D $port, IO::Resolver:D :$resolver!, Str:D :$method! --> ::?CLASS:D) {
         nqp::bindattr(self, $?CLASS, '$!PIO', nqp::socket(1));
         if $!family == PF_UNIX {
             # XXX: Doesn't belong here.
@@ -56,7 +56,6 @@ my class IO::Socket::INET does IO::Socket {
               nqp::unbox_i($!backlog || 128));
         }
         else {
-            $host //= '0.0.0.0';
             &*BIND($host, $resolver."$method"($host, $port,
                 :$!family, :$!type, :$!protocol,
                 :passive,
@@ -98,7 +97,7 @@ my class IO::Socket::INET does IO::Socket {
 
     # Open new connection to socket on $host:$port
     multi method new(
-        Str:D            :$host!,
+        Str:_            :$host,
         Port             :$port!,
         SocketFamily:D   :$family   = PF_UNSPEC,
         SocketType:D     :$type     = SOCK_STREAM,
@@ -112,7 +111,7 @@ my class IO::Socket::INET does IO::Socket {
             :$family, :$type, :$protocol, |%rest
         )!CONNECT($host, $port, :$resolver, :$method)
     }
-    method !CONNECT(::?CLASS:D: Str:D $host, Int:D $port, IO::Resolver:D :$resolver!, Str:D :$method! --> ::?CLASS:D) {
+    method !CONNECT(::?CLASS:D: Str:_ $host, Int:D $port, IO::Resolver:D :$resolver!, Str:D :$method! --> ::?CLASS:D) {
         nqp::bindattr(self, $?CLASS, '$!PIO', nqp::socket(0));
         if $!family == PF_UNIX {
             # XXX: Doesn't belong here.
@@ -158,6 +157,16 @@ my class IO::Socket::INET does IO::Socket {
     }
     multi method connect(
         ::?CLASS:U:
+        Port            $port,
+        SocketFamily:D :$family   = PF_UNSPEC,
+        IO::Resolver:D :$resolver = $*RESOLVER,
+        Str:D          :$method   = 'lookup',
+        --> ::?CLASS:D
+    ) {
+        self.new: :$port, :$family, :$resolver, :$method
+    }
+    multi method connect(
+        ::?CLASS:U:
         Str:D           $host,
         Port            $port,
         SocketFamily:D :$family   = PF_UNSPEC,
@@ -176,6 +185,16 @@ my class IO::Socket::INET does IO::Socket {
         --> ::?CLASS:D
     ) {
         self.new: :listen, :$address, :$family
+    }
+    multi method listen(
+        ::?CLASS:U:
+        Port            $localport  = 0,
+        SocketFamily:D :$family     = PF_UNSPEC,
+        IO::Resolver:D :$resolver   = $*RESOLVER,
+        Str:D          :$method     = 'resolve',
+        --> ::?CLASS:D
+    ) {
+        self.new: :listen, :$localport, :$family, :$resolver, :$method
     }
     multi method listen(
         ::?CLASS:U:
