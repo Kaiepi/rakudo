@@ -101,6 +101,14 @@ my class IO::Address::IPv4 is IO::Address::IP {
 
     method family(::?CLASS:_: --> PF_INET) { }
 
+    # RFC 6890 section 2.2.2: IPv4 Special-Purpose Address Registry Entries
+    method is-unspecified(::?CLASS:D: --> Bool:D) { self +> 24 == 0 }
+    method is-loopback(::?CLASS:D: --> Bool:D)    { self +> 24 == 0x7F }
+    method is-broadcast(::?CLASS:D: --> Bool:D)   { self == 0xFFFFFFFF }
+    method is-private(::?CLASS:D: --> Bool:D)     { self +> 24 == 0x0A || self +> 20 == 0x0AC1 || self +> 16 == 0xC0A8 }
+    method is-shared(::?CLASS:D: --> Bool:D)      { self +> 22 == 0x0191 }
+    method is-link-local(::?CLASS:D: --> Bool:D)  { self +> 16 == 0xA9FE }
+
     multi method gist(::?CLASS:D: --> Str:D) { "$.literal:$.port" }
 
     multi method raku(::?CLASS:D: --> Str:D) {
@@ -135,6 +143,41 @@ my class IO::Address::IPv6 is IO::Address::IP {
     method scope-id(::?CLASS:D: --> Int:D) {
         nqp::addrscopeid(nqp::getattr(self, IO::Address, '$!VM-address'))
     }
+
+    # RFC 6890 section 2.2.3: IPv6 Special-Purpose Address Registry Entries
+    method is-unspecified(::?CLASS:D: --> Bool:D)         { self == 0 }
+    method is-loopback(::?CLASS:D: --> Bool:D)            { self == 1 }
+    method is-ipv4-compatible(::?CLASS:D: --> Bool:D)     { self +> 32 == 0x0000 }
+    method is-ipv4-mapped(::?CLASS:D: --> Bool:D)         { self +> 32 == 0xFFFF }
+    method is-ipv4-encapsulatable(::?CLASS:D: --> Bool:D) { self +> 112 == 0x2002 } # i.e. 6to4
+
+    # RFC 4291 section 2.4: Address Type Identification
+    method is-multicast(::?CLASS:D: --> Bool:D) { self +> 120 == 0xFF }
+    method is-unicast(::?CLASS:D: --> Bool:D)   { self +> 120 != 0xFF }
+
+    subset Scope of Int:D where 0x0..0xF;
+    method scope(::?CLASS:D: --> Scope) {
+        # RFC 4291 section 2.7: Multicast Addresses
+        self +> 120 == 0xFF
+          ?? self +> 112 +& 0xF
+          # RFC 4291 section 2.5.6: Link-Local IPv6 Unicast Addresses
+          !! self +> 118 == 0x03FA
+            ?? 0x2
+            # RFC 4291 section 2.5.7: Site-Local IPv6 Unicast Addresses
+            !! self +> 118 == 0x03FB
+              ?? 0x5
+              # RFC 4291 section 2.4: Address Type Identification
+              !! 0xE
+    }
+
+    # RFC 7346 section 2: Definition of IPv6 Multicast Address Scopes
+    method is-interface-local(::?CLASS:D: --> Bool:D)    { self.scope == 0x1 }
+    method is-link-local(::?CLASS:D: --> Bool:D)         { self.scope == 0x2 }
+    method is-realm-local(::?CLASS:D: --> Bool:D)        { self.scope == 0x3 }
+    method is-admin-local(::?CLASS:D: --> Bool:D)        { self.scope == 0x4 }
+    method is-site-local(::?CLASS:D: --> Bool:D)         { self.scope == 0x5 }
+    method is-organization-local(::?CLASS:D: --> Bool:D) { self.scope == 0x8 }
+    method is-global(::?CLASS:D: --> Bool:D)             { self.scope == 0xE }
 
     multi method gist(::?CLASS:D: --> Str:D) { "[$.literal]:$.port" }
 
