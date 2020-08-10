@@ -82,3 +82,5 @@ Rakudo::Internals.REGISTER-DYNAMIC: '&*BIND', {
         ).throw;
     };
 };
+
+# vim: expandtab shiftwidth=4

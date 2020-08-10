@@ -258,3 +258,5 @@ my class IO::Address::Info {
         "$!address.gist()+<$!family $!type $!protocol>"
     }
 }
+
+# vim: expandtab shiftwidth=4
