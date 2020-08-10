@@ -8,10 +8,10 @@ my class IO::Socket::INET does IO::Socket {
         subset Protocol of Int:D where any SocketProtocol.^enum_value_list;
     }
 
-    has Str  $.host;
-    has Int  $.port;
-    has Str  $.localhost;
-    has Int  $.localport;
+    has Str  $!host       is built;
+    has Int  $!port       is built;
+    has Str  $!localhost  is built;
+    has Int  $!localport  is built;
     has Int  $.backlog;
     has Bool $.listening;
 
@@ -228,6 +228,42 @@ my class IO::Socket::INET does IO::Socket {
             my IO::Address:U \T = IO::Address[SocketFamily($family)];
             nqp::p6bindattrinvres(nqp::create(T), IO::Address, '$!VM-address', $VM-address)
         }
+    }
+
+    method localhost(::?CLASS:D: --> Str:_) {
+        Rakudo::Deprecations.DEPRECATED:
+            'IO::Socket::INET.local-address.literal',
+            '2020.FUTURE', # FIXME
+            '6.e',
+            :what<IO::Socket::INET.localhost>;
+        $!localhost
+    }
+
+    method localport(::?CLASS:D: --> Int:_) {
+        Rakudo::Deprecations.DEPRECATED:
+            'IO::Socket::INET.local-address.port',
+            '2020.FUTURE', # FIXME
+            '6.e',
+            :what<IO::Socket::INET.localport>;
+        $!localport
+    }
+
+    method host(::?CLASS:D: --> Str:_) {
+        Rakudo::Deprecations.DEPRECATED:
+            'IO::Socket::INET.remote-address.literal',
+            '2020.FUTURE', # FIXME
+            '6.e',
+            :what<IO::Socket::INET.host>;
+        $!host
+    }
+
+    method port(::?CLASS:D: --> Int:_) {
+        Rakudo::Deprecations.DEPRECATED:
+            'IO::Socket::INET.remote-address.port',
+            '2020.FUTURE', # FIXME
+            '6.e',
+            :what<IO::Socket::INET.port>;
+        $!port
     }
 
     # IO::Socket::INET was originally written to treat socket families, types,
