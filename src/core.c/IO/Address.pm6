@@ -101,6 +101,8 @@ my class IO::Address::IPv4 is IO::Address::IP {
 
     method family(::?CLASS:_: --> PF_INET) { }
 
+    method presentation(::?CLASS:_: --> Str:D) { self.literal }
+
     # RFC 6890 section 2.2.2: IPv4 Special-Purpose Address Registry Entries
     method is-unspecified(::?CLASS:D: --> Bool:D) { self +> 24 == 0 }
     method is-loopback(::?CLASS:D: --> Bool:D)    { self +> 24 == 0x7F }
@@ -143,6 +145,8 @@ my class IO::Address::IPv6 is IO::Address::IP {
     method scope-id(::?CLASS:D: --> Int:D) {
         nqp::addrscopeid(nqp::getattr(self, IO::Address, '$!VM-address'))
     }
+
+    method presentation(::?CLASS:D: --> Str:D) { self.literal.split('%', 2).head }
 
     # RFC 6890 section 2.2.3: IPv6 Special-Purpose Address Registry Entries
     method is-unspecified(::?CLASS:D: --> Bool:D)         { self == 0 }
