@@ -24,22 +24,23 @@ my class RESTRICTED-CLASS is Mu {
     method gist(|)     { restricted(self.^name) }
 }
 
-my class IO::CatHandle     is RESTRICTED-CLASS { }
-my class IO::Handle        is RESTRICTED-CLASS { }
-my class IO::Path          is RESTRICTED-CLASS { }
-my class IO::Pipe          is RESTRICTED-CLASS { }
-my class IO::Address       is RESTRICTED-CLASS { }
-my class IO::Address::IP   is RESTRICTED-CLASS { }
-my class IO::Address::IPv4 is RESTRICTED-CLASS { }
-my class IO::Address::IPv6 is RESTRICTED-CLASS { }
-my class IO::Address::UNIX is RESTRICTED-CLASS { }
-my class IO::Address::Info is RESTRICTED-CLASS { }
-my class IO::Resolver      is RESTRICTED-CLASS { }
-my class IO::Socket        is RESTRICTED-CLASS { }
-my class IO::Socket::INET  is RESTRICTED-CLASS { }
-my class NativeCall        is RESTRICTED-CLASS { }
-my class Proc              is RESTRICTED-CLASS { }
-my class Proc::Async       is RESTRICTED-CLASS { }
+my class IO::CatHandle      is RESTRICTED-CLASS { }
+my class IO::Handle         is RESTRICTED-CLASS { }
+my class IO::Path           is RESTRICTED-CLASS { }
+my class IO::Pipe           is RESTRICTED-CLASS { }
+my class IO::Address        is RESTRICTED-CLASS { }
+my class IO::Address::IP    is RESTRICTED-CLASS { }
+my class IO::Address::IPv4  is RESTRICTED-CLASS { }
+my class IO::Address::IPv6  is RESTRICTED-CLASS { }
+my class IO::Address::UNIX  is RESTRICTED-CLASS { }
+my class IO::Address::Info  is RESTRICTED-CLASS { }
+my class IO::Resolver       is RESTRICTED-CLASS { }
+my class IO::Resolver::Stub is RESTRICTED-CLASS { }
+my class IO::Socket         is RESTRICTED-CLASS { }
+my class IO::Socket::INET   is RESTRICTED-CLASS { }
+my class NativeCall         is RESTRICTED-CLASS { }
+my class Proc               is RESTRICTED-CLASS { }
+my class Proc::Async        is RESTRICTED-CLASS { }
 
 my role RESTRICTED-ROLE {
     method FALLBACK(|) { restricted(self.^name) }

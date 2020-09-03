@@ -3,5 +3,6 @@ src/core.e/PseudoStash.pm6
 src/core.e/Grammar.pm6
 src/core.e/EXPORTHOW.pm6
 src/core.e/Rakudo/Internals/Sprintf.pm6
+src/core.e/IO/Resolver/Stub.pm6
 src/core.e/IO/Socket/INET.pm6
 src/core.e/IO/Socket/Async.pm6
