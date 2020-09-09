@@ -101,12 +101,22 @@ my enum DNSClass (
 my class IO::Resolver::Stub is IO::Resolver {
     my constant Port = IO::Address::IP::Port;
 
-    has Mu $!VM-resolver is required;
+    my class Resolver is repr<MVMResolver> { }
 
-    submethod BUILD(::?CLASS:D: :@name-servers where .all ~~ IO::Address::IP:D, Port :$port = 53 --> Nil) {
+    has Resolver:D $!VM-resolver is required;
+
+    submethod BUILD(
+        ::?CLASS:D:
+               :@name-servers where .all ~~ IO::Address::IP:D,
+        Port   :$default-port = 53,
+        Bool:D :$tcp-only     = False,
+        --> Nil
+    ) {
         my Mu $name-servers := nqp::list;
         nqp::push($name-servers, nqp::getattr(nqp::decont($_), IO::Address, '$!VM-address')) for @name-servers;
-        $!VM-resolver := nqp::dnsresolver($name-servers, nqp::decont_i($port), blob8.^pun);
+        nqp::dnsconfigure(($!VM-resolver := nqp::create(Resolver)),
+          $name-servers, nqp::decont_i($default-port), nqp::unbox_i($tcp-only.Int),
+          blob8.^pun);
     }
 
     class ResourceRecord {
@@ -129,7 +139,15 @@ my class IO::Resolver::Stub is IO::Resolver {
             "$!domain-name\. $!ttl $class-name $type-name"
         }
 
-        my role Data[DNS_TYPE_A] {
+        my role Typed { ... }
+
+        method ^parameterize(::?CLASS:U $this is raw, DNSType:_ $type --> ::?CLASS:U) {
+            my ::?CLASS:U $mixin := self.mixin: $this, Typed.^parameterize: $type;
+            $mixin.^set_name: self.name($this) ~ '[' ~ ($type // $type.^name) ~ ']';
+            $mixin
+        }
+
+        my role Typed[DNS_TYPE_A] {
             has IO::Address::IPv4:D $.address is required;
 
             method data(::?CLASS:D: --> Blob:D) { $!address.raw }
@@ -138,18 +156,28 @@ my class IO::Resolver::Stub is IO::Resolver {
                 "&callsame() $!address.presentation()"
             }
         }
-        my role Data[DNSType:_] { # Fallback (RFC 3597).
+        my role Typed[DNSType:_] { # Fallback (refer to RFC 3597).
             has Blob:D $.data is required;
 
+            my Mu constant $HEX := nqp::list_s(
+              '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+              'A', 'B', 'C', 'D', 'E', 'F');
             multi method gist(::?CLASS:D: --> Str:D) {
-                join ' ', callsame, '\#', $!data.bytes, $!data.contents.fmt: '%02X', ''
+                nqp::stmts(
+                  (my Mu $data := nqp::decont($!data)),
+                  (my Mu $gist := nqp::list_s(
+                    nqp::unbox_s(callsame), '\#', nqp::coerce_is(nqp::elems($data)))),
+                  (my Mu $hex  := nqp::list_s),
+                  (my Mu $it   := nqp::iterator($data)),
+                  nqp::while(
+                    $it,
+                    nqp::stmts(
+                      (my int $byte = nqp::shift($it)),
+                      nqp::push_s($hex, nqp::atpos_s($HEX, nqp::bitshiftr_i($byte, 4))),
+                      nqp::push_s($hex, nqp::atpos_s($HEX, nqp::bitand_i($byte, 0xF))))),
+                  nqp::push_s($gist, nqp::join('', $hex)),
+                  nqp::join(' ', $gist))
             }
-        }
-
-        method ^parameterize(::?CLASS:U $this is raw, DNSType:_ $type --> ::?CLASS:U) {
-            my ::?CLASS:U $mixin := self.mixin: $this, Data.^parameterize: $type;
-            $mixin.^set_name: self.name($this) ~ "[$type]";
-            $mixin
         }
     }
 
@@ -177,12 +205,10 @@ my class IO::Resolver::Stub is IO::Resolver {
                   }
                   done;
               },
-              nqp::decont_s($!domain-name),
-              nqp::decont_i($!type.value),
-              nqp::decont_i($!class.value),
+              nqp::decont_s($!domain-name), nqp::decont_i($!type.value), nqp::decont_i($!class.value),
               Query);
 
-            tap my Tap:D $tap = Tap.new; # Tap.new({ nqp::cancel($query) })
+            tap my Tap:D $tap = Tap.new({ nqp::cancel($query) });
             $tap
         }
 
