@@ -221,50 +221,49 @@ my role Blob[::T = uint8] does Positional[T] does Stringy is repr('VMArray') is 
 
     method read-ubits(::?ROLE:D \SELF: int $pos, Int:D $bits --> UInt:D) {
         # sanity checking
-        die "Can only read from position 0..{
-            nqp::elems(self) * 8 - 1
-        } in buffer{
-            " '" ~ SELF.VAR.name ~ "'" if nqp::iscont(SELF)
-        }, you tried: $pos"
-          if $pos < 0;
+        X::OutOfRange.new(
+            what    => 'Position',
+            range   => ($_ ?? 0..($_ +< 3 - 1) !! $_..$_ given nqp::elems(self)),
+            got     => $pos,
+            comment => 'buffer underflow',
+        ).throw if $pos < 0;
+        X::OutOfRange.new(
+            what    => 'Size',
+            range   => ($_ ?? 1..($_ +< 3 - $pos) !! $_..$_ given nqp::elems(self)),
+            got     => $bits,
+            comment => 'buffer overflow',
+        ).throw if $bits < 1 || ($pos + $bits - 1) +> 3 >= nqp::elems(self);
 
-        die "Can only read 1..{
-            nqp::elems(self) * 8 - $pos
-        } bits from position $pos in buffer{
-            " '" ~ SELF.VAR.name ~ "'" if nqp::iscont(SELF)
-        }, you tried: $bits"
-          if ($pos + $bits - 1) +> 3 >= nqp::elems(self);
-
-# l=least significant byte, m=most significant byte
-# 00010010 00110100 01011100 01111000 10011010
-# ________ mmmmmmmm llllllll ________ ________   8,16 mmmmmmmm llllllll
-# ________ __mmmmmm llllllll ________ ________   8,16   mmmmmm llllllll
-# ________ mmmmmmll llllll__ ________ ________   8,16   mmmmmm llllllll
-# ________ __mmmmmm mmllllll ll______ ________  10,16 mmmmmmmm llllllll
-# ________ ________ ______ll lll_____ ________  21, 5             lllll
-# ________ ________ ________ __lllll_ ________  26, 5             lllll
-
-        my int   $first-bit   = $pos +& 7;
-        my int   $last-bit    = ($pos + $bits) +& 7;
-        my int   $first-byte  = $pos +> 3;
-        my int   $last-byte   = ($pos + $bits - 1) +> 3;
-        my int   $i           = $first-byte;
-        my Int:D $result     := nqp::p6box_i(nqp::atpos_i(self, $i));
-        nqp::while(
-          nqp::islt_i($i++, $last-byte),
-          ($result := $result +< 8 +| nqp::atpos_i(self, $i)));
-        nqp::if(
-          $last-bit,
-          # Our result is shifted left due to the size not being a multiple of
-          # 8. Shift the bits we want to the right:
-          ($result := $result +> (8 - $last-bit)));
-        nqp::if(
-          $first-bit,
-          # Our result has extra bits due to the offset not being a multiple of
-          # 8. Mask the bits we want:
-          ($result +& (1 +< $bits - 1)),
-          # Result's OK, return as-is:
-          $result)
+        # l=least significant byte, m=most significant byte
+        # 00010010 00110100 01011100 01111000 10011010
+        # ________ mmmmmmmm llllllll ________ ________   8,16 mmmmmmmm llllllll
+        # ________ __mmmmmm llllllll ________ ________   8,16   mmmmmm llllllll
+        # ________ mmmmmmll llllll__ ________ ________   8,16   mmmmmm llllllll
+        # ________ __mmmmmm mmllllll ll______ ________  10,16 mmmmmmmm llllllll
+        # ________ ________ ______ll lll_____ ________  21, 5             lllll
+        # ________ ________ ________ __lllll_ ________  26, 5             lllll
+        nqp::stmts(
+          (my int   $first-bit   = $pos +& 7),
+          (my int   $last-bit    = ($pos + $bits) +& 7),
+          (my int   $first-byte  = $pos +> 3),
+          (my int   $last-byte   = ($pos + $bits - 1) +> 3),
+          (my int   $i           = $first-byte),
+          (my Int:D $result     := nqp::p6box_i(nqp::atpos_i(self, $i))),
+          nqp::while(
+            nqp::islt_i($i++, $last-byte),
+            ($result := $result +< 8 +| nqp::atpos_i(self, $i))),
+          nqp::if(
+            $last-bit,
+            # Our result is shifted left due to the size not being a multiple of
+            # 8. Shift the bits we want to the right:
+            ($result := $result +> (8 - $last-bit))),
+          nqp::if(
+            $first-bit,
+            # Our result has extra bits due to the offset not being a multiple of
+            # 8. Mask the bits we want:
+            ($result +& (1 +< $bits - 1)),
+            # Result's OK, return as-is:
+            $result))
     }
 
     multi method Bool(Blob:D:) { nqp::hllbool(nqp::elems(self)) }
@@ -862,12 +861,6 @@ my role Buf[::T = uint8] does Blob[T] is repr('VMArray') is array_type(T) {
     }
 #?endif
 
-    sub POS-OOR(\SELF, int $pos --> Nil) is hidden-from-backtrace {
-        die "Can only write from position 0..* in buffer{
-            " '" ~ SELF.VAR.name ~ "'" if nqp::iscont(SELF)
-        }, you tried: $pos"
-    }
-
     method write-bits(::?ROLE \SELF:
       int $pos, Int:D $bits, Int:D \value
     ) is raw {
@@ -878,33 +871,38 @@ my role Buf[::T = uint8] does Blob[T] is repr('VMArray') is array_type(T) {
       int $pos, Int:D $bits, UInt:D \value
     ) is raw {
         # sanity check
-        POS-OOR(SELF, $pos) if $pos < 0;
+        X::OutOfRange.new(
+            what    => 'Position',
+            range   => ($_ ?? 0..($_ +< 3 - 1) !! $_..$_ given nqp::elems(self)),
+            got     => $pos,
+            comment => 'buffer underflow',
+        ).throw if $pos < 0;
 
-        # set up basic info
-        my ::?ROLE:D $self       := nqp::defined(self) ?? self !! nqp::create(self);
-        my Int:D     $to-write   := value;
-        my int       $first-byte  = $pos +> 3;
-        my int       $last-byte   = ($pos + $bits - 1) +> 3;
-        nqp::if(
-          (my int $first-bit = $pos +& 7),
-          # align to the left, including any bits we don't want to be overwriting
-          ($to-write := ($to-write +& (1 +< $bits - 1))
-                     +| (nqp::atpos_i($self, $first-byte) +< $bits)));
-        nqp::if(
-          (my int $last-bit = ($pos + $bits) +& 7),
-          # align to the right, including any bits we don't want to be overwriting
-          ($to-write := ($to-write +< (8 - $last-bit))
-                     +| (nqp::atpos_i($self, $last-byte) +> $last-bit)));
-
-        # now write our value
-        my int $i = $last-byte;
-        nqp::bindpos_i($self, $i, $to-write +& 0xFF);
-        nqp::while(
-          nqp::isgt_i($i, $first-byte),
-          nqp::stmts(
-            ($to-write := $to-write +> 8),
-            nqp::bindpos_i($self, --$i, $to-write +& 0xFF)));
-        $self
+        nqp::stmts(
+          # set up basic info
+          (my ::?ROLE:D $self       := nqp::defined(self) ?? self !! nqp::create(self)),
+          (my Int:D     $to-write   := value),
+          (my int       $first-byte  = $pos +> 3),
+          (my int       $last-byte   = ($pos + $bits - 1) +> 3),
+          nqp::if(
+            (my int $first-bit = $pos +& 7),
+            # align to the left, including any bits we don't want to be overwriting
+            ($to-write := ($to-write +& (1 +< $bits - 1))
+                       +| (nqp::atpos_i($self, $first-byte) +< $bits))),
+          nqp::if(
+            (my int $last-bit = ($pos + $bits) +& 7),
+            # align to the right, including any bits we don't want to be overwriting
+            ($to-write := ($to-write +< (8 - $last-bit))
+                       +| (nqp::atpos_i($self, $last-byte) +> $last-bit))),
+          # now write our value
+          (my int $i = $last-byte),
+          nqp::bindpos_i($self, $i, $to-write +& 0xFF),
+          nqp::while(
+            nqp::isgt_i($i, $first-byte),
+            nqp::stmts(
+              ($to-write := $to-write +> 8),
+              nqp::bindpos_i($self, --$i, $to-write +& 0xFF))),
+          $self)
     }
 
     multi method list(Buf:D:) {
