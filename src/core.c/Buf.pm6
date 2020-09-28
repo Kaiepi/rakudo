@@ -19,13 +19,12 @@ my role Blob[::T = uint8] does Positional[T] does Stringy is repr('VMArray') is 
       unless nqp::objprimspec(T) == 1 || nqp::objprimspec(T) == 4 || nqp::objprimspec(T) == 5;
 
     # other then *8 not supported yet
-    my int $bpe = try {
-#?if jvm
-        # https://irclog.perlgeek.de/perl6-dev/2017-01-20#i_13961377
-        CATCH { default { Nil } }
-#?endif
-        (T.^nativesize / 8).Int
-    } // 1;
+    my int   $size   = T.^nativesize;
+    my int   $bpe    = $size +> 3;
+    my Int:D $min   := nqp::p6box_i(nqp::not_i(T.^unsigned) && (1 +< ($size - 1)));
+    my Int:D $max   := nqp::bitshiftl_I(1, nqp::p6box_i($size), Int) - 1;
+    my int   $shift  = nqp::coerce_ni(nqp::div_n(nqp::log_n(nqp::coerce_in($size)), nqp::log_n(2e0)));
+    my int   $mask   = 1 +< $shift - 1;
 
     multi method WHICH(Blob:D: --> ValueObjAt:D) {
         nqp::box_s(
@@ -223,16 +222,16 @@ my role Blob[::T = uint8] does Positional[T] does Stringy is repr('VMArray') is 
         # sanity checking
         X::OutOfRange.new(
             what    => 'Position',
-            range   => ($_ ?? 0..($_ +< 3 - 1) !! $_..$_ given nqp::elems(self)),
+            range   => ($_ ?? 0..($_ +< $shift - 1) !! $_..$_ given nqp::elems(self)),
             got     => $pos,
             comment => 'buffer underflow',
         ).throw if $pos < 0;
         X::OutOfRange.new(
             what    => 'Size',
-            range   => ($_ ?? 1..($_ +< 3 - $pos) !! $_..$_ given nqp::elems(self)),
+            range   => ($_ ?? 1..($_ +< $shift - $pos) !! $_..$_ given nqp::elems(self)),
             got     => $bits,
             comment => 'buffer overflow',
-        ).throw if $bits < 1 || ($pos + $bits - 1) +> 3 >= nqp::elems(self);
+        ).throw if $bits < 1 || ($pos + $bits - 1) +> $shift >= nqp::elems(self);
 
         # l=least significant byte, m=most significant byte
         # 00010010 00110100 01011100 01111000 10011010
@@ -243,20 +242,20 @@ my role Blob[::T = uint8] does Positional[T] does Stringy is repr('VMArray') is 
         # ________ ________ ______ll lll_____ ________  21, 5             lllll
         # ________ ________ ________ __lllll_ ________  26, 5             lllll
         nqp::stmts(
-          (my int   $first-bit   = $pos +& 7),
-          (my int   $last-bit    = ($pos + $bits) +& 7),
-          (my int   $first-byte  = $pos +> 3),
-          (my int   $last-byte   = ($pos + $bits - 1) +> 3),
+          (my int   $first-bit   = $pos +& $mask),
+          (my int   $last-bit    = ($pos + $bits) +& $mask),
+          (my int   $first-byte  = $pos +> $shift),
+          (my int   $last-byte   = ($pos + $bits - 1) +> $shift),
           (my int   $i           = $first-byte),
           (my Int:D $result     := nqp::p6box_i(nqp::atpos_i(self, $i))),
           nqp::while(
             nqp::islt_i($i++, $last-byte),
-            ($result := $result +< 8 +| nqp::atpos_i(self, $i))),
+            ($result := $result +< $size +| nqp::atpos_i(self, $i))),
           nqp::if(
             $last-bit,
             # Our result is shifted left due to the size not being a multiple of
             # 8. Shift the bits we want to the right:
-            ($result := $result +> (8 - $last-bit))),
+            ($result := $result +> ($size - $last-bit))),
           nqp::if(
             $first-bit,
             # Our result has extra bits due to the offset not being a multiple of
@@ -700,6 +699,12 @@ my class utf32 does Blob[uint32] is repr('VMArray') {
 }
 
 my role Buf[::T = uint8] does Blob[T] is repr('VMArray') is array_type(T) {
+    my int   $size   = T.^nativesize;
+    my int   $bpe    = $size +> 3;
+    my Int:D $min   := nqp::p6box_i(nqp::not_i(T.^unsigned) && (1 +< ($size - 1)));
+    my Int:D $max   := nqp::bitshiftl_I(1, nqp::p6box_i($size), Int) - 1;
+    my int   $shift  = nqp::coerce_ni(nqp::div_n(nqp::log_n(nqp::coerce_in($size)), nqp::log_n(2e0)));
+    my int   $mask   = 1 +< $shift - 1;
 
     multi method WHICH(Buf:D:) { self.Mu::WHICH }
 
@@ -873,7 +878,7 @@ my role Buf[::T = uint8] does Blob[T] is repr('VMArray') is array_type(T) {
         # sanity check
         X::OutOfRange.new(
             what    => 'Position',
-            range   => ($_ ?? 0..($_ +< 3 - 1) !! $_..$_ given nqp::elems(self)),
+            range   => ($_ ?? 0..($_ +< $shift - 1) !! $_..$_ given nqp::elems(self)),
             got     => $pos,
             comment => 'buffer underflow',
         ).throw if $pos < 0;
@@ -882,26 +887,26 @@ my role Buf[::T = uint8] does Blob[T] is repr('VMArray') is array_type(T) {
           # set up basic info
           (my ::?ROLE:D $self       := nqp::defined(self) ?? self !! nqp::create(self)),
           (my Int:D     $to-write   := value),
-          (my int       $first-byte  = $pos +> 3),
-          (my int       $last-byte   = ($pos + $bits - 1) +> 3),
+          (my int       $first-byte  = $pos +> $shift),
+          (my int       $last-byte   = ($pos + $bits - 1) +> $shift),
           nqp::if(
-            (my int $first-bit = $pos +& 7),
+            (my int $first-bit = $pos +& $mask),
             # align to the left, including any bits we don't want to be overwriting
             ($to-write := ($to-write +& (1 +< $bits - 1))
                        +| (nqp::atpos_i($self, $first-byte) +< $bits))),
           nqp::if(
-            (my int $last-bit = ($pos + $bits) +& 7),
+            (my int $last-bit = ($pos + $bits) +& $mask),
             # align to the right, including any bits we don't want to be overwriting
-            ($to-write := ($to-write +< (8 - $last-bit))
+            ($to-write := ($to-write +< ($size - $last-bit))
                        +| (nqp::atpos_i($self, $last-byte) +> $last-bit))),
           # now write our value
           (my int $i = $last-byte),
-          nqp::bindpos_i($self, $i, $to-write +& 0xFF),
+          nqp::bindpos_i($self, $i, $to-write +& $max),
           nqp::while(
             nqp::isgt_i($i, $first-byte),
             nqp::stmts(
-              ($to-write := $to-write +> 8),
-              nqp::bindpos_i($self, --$i, $to-write +& 0xFF))),
+              ($to-write := $to-write +> $size),
+              nqp::bindpos_i($self, --$i, $to-write +& $max))),
           $self)
     }
 
