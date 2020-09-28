@@ -242,26 +242,23 @@ my role Blob[::T = uint8] does Positional[T] does Stringy is repr('VMArray') is 
         # ________ ________ ______ll lll_____ ________  21, 5             lllll
         # ________ ________ ________ __lllll_ ________  26, 5             lllll
         nqp::stmts(
-          (my int   $first-bit   = $pos +& $mask),
-          (my int   $last-bit    = ($pos + $bits) +& $mask),
+          # set up basic info
           (my int   $first-byte  = $pos +> $shift),
           (my int   $last-byte   = ($pos + $bits - 1) +> $shift),
           (my int   $i           = $first-byte),
           (my Int:D $result     := nqp::p6box_i(nqp::atpos_i(self, $i))),
+          # copy relevant bytes to the result
           nqp::while(
             nqp::islt_i($i++, $last-byte),
             ($result := $result +< $size +| nqp::atpos_i(self, $i))),
           nqp::if(
-            $last-bit,
-            # Our result is shifted left due to the size not being a multiple of
-            # 8. Shift the bits we want to the right:
+            (my int $last-bit = ($pos + $bits) +& $mask),
+            # align the result to the right
             ($result := $result +> ($size - $last-bit))),
           nqp::if(
-            $first-bit,
-            # Our result has extra bits due to the offset not being a multiple of
-            # 8. Mask the bits we want:
+            (my int $first-bit = $pos +& $mask),
+            # align the result to the left
             ($result +& (1 +< $bits - 1)),
-            # Result's OK, return as-is:
             $result))
     }
 
@@ -899,7 +896,7 @@ my role Buf[::T = uint8] does Blob[T] is repr('VMArray') is array_type(T) {
             # align to the right, including any bits we don't want to be overwriting
             ($to-write := ($to-write +< ($size - $last-bit))
                        +| (nqp::atpos_i($self, $last-byte) +> $last-bit))),
-          # now write our value
+          # write our value's bytes
           (my int $i = $last-byte),
           nqp::bindpos_i($self, $i, $to-write +& $max),
           nqp::while(
