@@ -220,7 +220,6 @@ my role Blob[::T = uint8] does Positional[T] does Stringy is repr('VMArray') is 
     }
 
     method read-ubits(::?ROLE:D \SELF: int $pos, Int:D $bits --> UInt:D) {
-
         # sanity checking
         die "Can only read from position 0..{
             nqp::elems(self) * 8 - 1
@@ -236,12 +235,6 @@ my role Blob[::T = uint8] does Positional[T] does Stringy is repr('VMArray') is 
         }, you tried: $bits"
           if ($pos + $bits - 1) +> 3 >= nqp::elems(self);
 
-        # set up stuff to work with
-        my int $first-bit = $pos +& 7;             # 0 = left-aligned
-        my int $last-bit  = ($pos + $bits) +& 7;   # 0 = right-aligned
-        my int $first-byte = $pos +> 3;
-        my int $last-byte  = ($pos + $bits - 1) +> 3;
-
 # l=least significant byte, m=most significant byte
 # 00010010 00110100 01011100 01111000 10011010
 # ________ mmmmmmmm llllllll ________ ________   8,16 mmmmmmmm llllllll
@@ -251,26 +244,27 @@ my role Blob[::T = uint8] does Positional[T] does Stringy is repr('VMArray') is 
 # ________ ________ ______ll lll_____ ________  21, 5             lllll
 # ________ ________ ________ __lllll_ ________  26, 5             lllll
 
+        my int   $first-bit   = $pos +& 7;
+        my int   $last-bit    = ($pos + $bits) +& 7;
+        my int   $first-byte  = $pos +> 3;
+        my int   $last-byte   = ($pos + $bits - 1) +> 3;
+        my int   $i           = $first-byte;
+        my Int:D $result     := nqp::p6box_i(nqp::atpos_i(self, $i));
+        nqp::while(
+          nqp::islt_i($i++, $last-byte),
+          ($result := $result +< 8 +| nqp::atpos_i(self, $i)));
         nqp::if(
-          nqp::iseq_i($first-byte,$last-byte),
-          (my $result := nqp::atpos_i(self,$first-byte)),
-          nqp::stmts(
-            ($result  := 0),
-            (my int $i = $first-byte - 1),
-            nqp::while(
-              nqp::isle_i(++$i,$last-byte),
-              ($result :=
-                nqp::bitshiftl_I($result,8,Int) +| nqp::atpos_i(self,$i))
-            )
-          )
-        );
-
-        $last-bit
-          ?? ($result +> (8 - $last-bit)) # not right-aligned, so
-               +& (1 +< $bits - 1)         # shift and mask
-          !! $first-bit                   # right-aligned
-            ?? $result +& (1 +< $bits - 1) # but not left-aligned, so mask
-            !! $result                     # also left-aligned, already done
+          $last-bit,
+          # Our result is shifted left due to the size not being a multiple of
+          # 8. Shift the bits we want to the right:
+          ($result := $result +> (8 - $last-bit)));
+        nqp::if(
+          $first-bit,
+          # Our result has extra bits due to the offset not being a multiple of
+          # 8. Mask the bits we want:
+          ($result +& (1 +< $bits - 1)),
+          # Result's OK, return as-is:
+          $result)
     }
 
     multi method Bool(Blob:D:) { nqp::hllbool(nqp::elems(self)) }
