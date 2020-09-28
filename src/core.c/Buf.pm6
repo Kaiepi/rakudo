@@ -877,65 +877,33 @@ my role Buf[::T = uint8] does Blob[T] is repr('VMArray') is array_type(T) {
     method write-ubits(::?ROLE \SELF:
       int $pos, Int:D $bits, UInt:D \value
     ) is raw {
-
         # sanity check
         POS-OOR(SELF, $pos) if $pos < 0;
-        my $self := nqp::isconcrete(self) ?? self !! nqp::create(self);
 
         # set up basic info
-        my int $first-bit = $pos +& 7;
-        my int $last-bit  = ($pos + $bits) +& 7;
-        my int $first-byte = $pos +> 3;
-        my int $last-byte  = ($pos + $bits - 1) +> 3;
+        my ::?ROLE:D $self       := nqp::defined(self) ?? self !! nqp::create(self);
+        my Int:D     $to-write   := value;
+        my int       $first-byte  = $pos +> 3;
+        my int       $last-byte   = ($pos + $bits - 1) +> 3;
+        nqp::if(
+          (my int $first-bit = $pos +& 7),
+          # align to the left, including any bits we don't want to be overwriting
+          ($to-write := ($to-write +& (1 +< $bits - 1))
+                     +| (nqp::atpos_i($self, $first-byte) +< $bits)));
+        nqp::if(
+          (my int $last-bit = ($pos + $bits) +& 7),
+          # align to the right, including any bits we don't want to be overwriting
+          ($to-write := ($to-write +< (8 - $last-bit))
+                     +| (nqp::atpos_i($self, $last-byte) +> $last-bit)));
 
-        my $value := value +& (1 +< $bits - 1);            # mask valid part
-        $value := $value +< (8 - $last-bit) if $last-bit;  # move into position
-
-        my int $lmask = nqp::sub_i(1 +< $first-bit,1) +< (8 - $first-bit)
-          if $first-bit;
-        my int $rmask = 1 +< nqp::sub_i(8 - $last-bit,1)
-          if $last-bit;
-
-        # all done in a single byte
-        if $first-byte == $last-byte {
-            nqp::bindpos_i($self,$first-byte,
-              $value +| (nqp::atpos_i($self,$first-byte) +& ($lmask +| $rmask))
-            );
-        }
-
-        # spread over multiple bytes
-        else {
-            my int $i = $last-byte;
-
-            # process last byte first if it is a partial
-            if $last-bit {
-                nqp::bindpos_i($self,$i,
-                  ($value +& 255) +| (nqp::atpos_i($self,$i) +& $rmask)
-                );
-                $value := $value +> 8;
-            }
-
-            # not a partial, so make sure we process last byte later
-            else {
-                ++$i;
-            }
-
-            # walk from right to left, exclude left-most is partial
-            my int $last = $first-byte + nqp::isgt_i($first-bit,0);
-            nqp::while(
-              nqp::isge_i(--$i,$last),
-              nqp::stmts(
-                nqp::bindpos_i($self,$i,($value +& 255)),
-                ($value := $value +> 8)
-              )
-            );
-
-            # process last byte if it was a partial
-            nqp::bindpos_i($self,$i,($value +& 255)
-              +| (nqp::atpos_i($self,$i) +& $lmask))
-              if $first-bit;
-        }
-
+        # now write our value
+        my int $i = $last-byte;
+        nqp::bindpos_i($self, $i, $to-write +& 0xFF);
+        nqp::while(
+          nqp::isgt_i($i, $first-byte),
+          nqp::stmts(
+            ($to-write := $to-write +> 8),
+            nqp::bindpos_i($self, --$i, $to-write +& 0xFF)));
         $self
     }
 
