@@ -28,7 +28,7 @@ class Perl6::Metamodel::CurriedRoleHOW
     has @!pos_args;
     has %!named_args;
     has @!role_typecheck_list;
-    has @!parent_typecheck_list;    # Only for parents instantiated from generics
+    has @!parent_typecheck_list;
     has $!is_complete;
     has $!archetypes;
 
@@ -116,21 +116,19 @@ class Perl6::Metamodel::CurriedRoleHOW
             for $binding.HOW.roles($binding, :!transitive) -> $role {
                 if $role.HOW.archetypes.generic && $type_env {
                     $role := $role.HOW.instantiate_generic($role, $type_env);
+                    unless $role.HOW.archetypes.composable || $role.HOW.archetypes.composalizable {
+                        my $target-name := $obj.HOW.name($obj);
+                        my $role-name := $role.HOW.name($role);
+                        Perl6::Metamodel::Configuration.throw_or_die(
+                            'X::Composition::NotComposable',
+                            $role-name ~ " is not composable, so " ~ $target-name ~ " cannot compose it",
+                            :$target-name,
+                            composer => $role,
+                        )
+                    }
+                    self.add_role($obj, $role);
                 }
-                unless $role.HOW.archetypes.composable || $role.HOW.archetypes.composalizable {
-                    my $target-name := $obj.HOW.name($obj);
-                    my $role-name := $role.HOW.name($role);
-                    Perl6::Metamodel::Configuration.throw_or_die(
-                        'X::Composition::NotComposable',
-                        $role-name ~ " is not composable, so " ~ $target-name ~ " cannot compose it",
-                        :$target-name,
-                        composer => $role,
-                    )
-                }
-                self.add_role($obj, $role);
             }
-            # Contrary to roles, we only consider generic parents. I.e. cases like:
-            # role R[::T] is T {}
             if $type_env {
                 for $binding.HOW.parents($binding, :local) -> $parent {
                     if $parent.HOW.archetypes.generic {
@@ -148,20 +146,11 @@ class Perl6::Metamodel::CurriedRoleHOW
         my $binding := self.bind($obj);
         my @rtl := [$!curried_role];
         unless $binding =:= $obj {
-            # XXX Not sure if it makes sense adding roles from group into the
-            # type checking.
-            # for $!curried_role.HOW.role_typecheck_list($obj) {
-            #     nqp::push(@rtl, $_);
-            # }
-            for self.roles_to_compose($obj) -> $role {
-                my $how := $role.HOW;
-                if $how.archetypes.composable() || $how.archetypes.composalizable() {
-                    nqp::push(@rtl, $role);
-                    for $how.role_typecheck_list($role) {
-                        nqp::push(@rtl, $_);
-                    }
-                }
+            unless $binding =:= $!curried_role {
+                @rtl.push($binding);
+                nqp::splice(@rtl, $binding.HOW.role_typecheck_list($binding), +@rtl, 0);
             }
+            nqp::splice(@rtl, self.roles_to_compose($obj), +@rtl, 0);
         }
         @!role_typecheck_list := @rtl;
     }
@@ -231,9 +220,6 @@ class Perl6::Metamodel::CurriedRoleHOW
             }
         }
         self.complete_parameterization($obj) unless $!is_complete;
-        if !($!binding =:= NQPMu) && $!binding.HOW.type_check_parents($!binding, $decont) {
-            return 1
-        }
         for @!parent_typecheck_list -> $parent {
             if nqp::istype($decont, $parent) {
                 return 1
