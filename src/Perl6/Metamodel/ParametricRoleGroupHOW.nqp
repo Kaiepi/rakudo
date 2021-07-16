@@ -179,6 +179,11 @@ class Perl6::Metamodel::ParametricRoleGroupHOW
                 return 1;
             }
         }
+        for @!candidates {
+            if $decont =:= nqp::decont($_) {
+                return 1;
+            }
+        }
         for @!role_typecheck_list {
             if $decont =:= nqp::decont($_) {
                 return 1;
