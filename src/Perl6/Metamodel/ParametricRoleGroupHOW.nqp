@@ -90,6 +90,24 @@ class Perl6::Metamodel::ParametricRoleGroupHOW
         $curried
     }
 
+    method bind($obj, $curried) {
+        my $candidate;
+        my %named_args := $curried.HOW.role_named_arguments($curried);
+        my @pos_args := [$obj];
+        nqp::splice(@pos_args, $curried.HOW.role_arguments($curried), +@pos_args, 0);
+        try {
+            $candidate := self.select_candidate($obj, @pos_args, %named_args);
+            # Selection can fail if our type arguments are generic and
+            # uninstantiable at this stage of a script. Try again later.
+            CATCH { $candidate := nqp::null }
+        }
+        nqp::isnull($candidate)
+          ?? $curried
+          !! nqp::can($candidate.HOW, 'bind')
+            ?? $candidate.HOW.bind($candidate, $curried)
+            !! $candidate
+    }
+
     method add_possibility($obj, $possible) {
         @!candidates[+@!candidates] := $possible;
         nqp::push(@!nonsignatured, nqp::decont($possible)) unless $possible.HOW.signatured($possible);

@@ -24,7 +24,7 @@ class Perl6::Metamodel::CurriedRoleHOW
     does Perl6::Metamodel::InvocationProtocol
 {
     has $!curried_role;
-    has $!candidate;                # Will contain matching candidate from curried role group
+    has $!binding;
     has @!pos_args;
     has %!named_args;
     has @!role_typecheck_list;
@@ -79,24 +79,41 @@ class Perl6::Metamodel::CurriedRoleHOW
         nqp::settypecheckmode($type, 2);
     }
 
-    method parameterize_roles($obj) {
-        my @pos_args;
-        nqp::push(@pos_args, $obj);
-        for @!pos_args {
-            nqp::push(@pos_args, $_);
+    # A curried role may be bound to a role other than its origin, e.g. a
+    # parametric role group and the candidate we're not quite ready to fetch at
+    # construction time. If we're still not ready yet whenever we need it, the
+    # binding is ourself for now. If the origin lacks a means of producing a
+    # binding, we assume it's its own binding by default.
+    method bind($obj) {
+        if $!binding =:= NQPMu {
+            if nqp::can($!curried_role.HOW, 'bind') {
+                my $binding := nqp::decont($!curried_role.HOW.bind($!curried_role, $obj));
+                return $obj if $binding =:= $obj;
+                $!binding := $binding
+            }
+            else {
+                $!binding := $!curried_role
+            }
         }
-        if nqp::istype($!curried_role.HOW, Perl6::Metamodel::ParametricRoleGroupHOW) {
-            $!candidate := $!curried_role.HOW.select_candidate($!curried_role, @pos_args, %!named_args);
-            my $candidate-how := $!candidate.HOW;
+        else {
+            $!binding
+        }
+    }
 
-            self.set_language_revision($obj, $candidate-how.language-revision($!candidate));
+    method parameterize_roles($obj) {
+        my $binding := self.bind($obj);
+
+        # If we have a binding available, we can go ahead with a sort of lazy
+        # composition.
+        unless $binding =:= $obj {
+            self.set_language_revision($obj, $binding.HOW.language-revision($binding));
 
             my $type_env;
             try {
-                my @result := $candidate-how.body_block($!candidate)(|@pos_args, |%!named_args);
+                my @result := $binding.HOW.body_block($binding)($!curried_role, |@!pos_args, |%!named_args);
                 $type_env := @result[1];
             }
-            for $candidate-how.roles($!candidate, :!transitive) -> $role {
+            for $binding.HOW.roles($binding, :!transitive) -> $role {
                 if $role.HOW.archetypes.generic && $type_env {
                     $role := $role.HOW.instantiate_generic($role, $type_env);
                 }
@@ -115,7 +132,7 @@ class Perl6::Metamodel::CurriedRoleHOW
             # Contrary to roles, we only consider generic parents. I.e. cases like:
             # role R[::T] is T {}
             if $type_env {
-                for $candidate-how.parents($!candidate, :local) -> $parent {
+                for $binding.HOW.parents($binding, :local) -> $parent {
                     if $parent.HOW.archetypes.generic {
                         my $ins := $parent.HOW.instantiate_generic($parent, $type_env);
                         nqp::push(@!parent_typecheck_list, $ins)
@@ -123,22 +140,26 @@ class Perl6::Metamodel::CurriedRoleHOW
                 }
             }
         }
+
         self.update_role_typecheck_list($obj);
     }
 
     method update_role_typecheck_list($obj) {
-        my @rtl;
-        nqp::push(@rtl, $!curried_role);
-        # XXX Not sure if it makes sense adding roles from group into the type checking.
-        # for $!curried_role.HOW.role_typecheck_list($obj) {
-        #     nqp::push(@rtl, $_);
-        # }
-        for self.roles_to_compose($obj) -> $role {
-            my $how := $role.HOW;
-            if $how.archetypes.composable() || $how.archetypes.composalizable() {
-                nqp::push(@rtl, $role);
-                for $how.role_typecheck_list($role) {
-                    nqp::push(@rtl, $_);
+        my $binding := self.bind($obj);
+        my @rtl := [$!curried_role];
+        unless $binding =:= $obj {
+            # XXX Not sure if it makes sense adding roles from group into the
+            # type checking.
+            # for $!curried_role.HOW.role_typecheck_list($obj) {
+            #     nqp::push(@rtl, $_);
+            # }
+            for self.roles_to_compose($obj) -> $role {
+                my $how := $role.HOW;
+                if $how.archetypes.composable() || $how.archetypes.composalizable() {
+                    nqp::push(@rtl, $role);
+                    for $how.role_typecheck_list($role) {
+                        nqp::push(@rtl, $_);
+                    }
                 }
             }
         }
@@ -210,7 +231,7 @@ class Perl6::Metamodel::CurriedRoleHOW
             }
         }
         self.complete_parameterization($obj) unless $!is_complete;
-        if !($!candidate =:= NQPMu) && $!candidate.HOW.type_check_parents($!candidate, $decont) {
+        if !($!binding =:= NQPMu) && $!binding.HOW.type_check_parents($!binding, $decont) {
             return 1
         }
         for @!parent_typecheck_list -> $parent {
