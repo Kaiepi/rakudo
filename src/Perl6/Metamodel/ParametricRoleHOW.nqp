@@ -214,9 +214,15 @@ class Perl6::Metamodel::ParametricRoleHOW
         # Roles done by this role need fully specializing also.
         for self.roles_to_compose($obj) {
             my $ins := my $r := $_;
-            if $_.HOW.archetypes.generic {
+            if $ins.HOW.archetypes.generic {
                 $ins := $ins.HOW.instantiate_generic($ins, $type_env);
-                unless $ins.HOW.archetypes.parametric {
+                if $ins.HOW.archetypes.composalizable {
+                    # If we have a generic doee, we can't know whether or not
+                    # it's composalizable until now; otherwise, this gets
+                    # taken care of well beforehand ("does" early).
+                    $ins := $ins.HOW.composalize($ins);
+                }
+                unless $ins.HOW.archetypes.composable {
                     my $target-name := $obj.HOW.name($obj);
                     my $role-name := $ins.HOW.name($ins);
                     Perl6::Metamodel::Configuration.throw_or_die(
