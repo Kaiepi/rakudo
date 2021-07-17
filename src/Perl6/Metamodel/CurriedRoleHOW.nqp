@@ -90,20 +90,17 @@ class Perl6::Metamodel::CurriedRoleHOW
     }
 
     method parameterize_roles($obj) {
-        my $binding := self.bind($obj);
-
         # If we have a binding available, we can go ahead with a sort of lazy
         # composition.
-        unless nqp::decont($binding) =:= $obj {
+        my $binding := self.bind($obj);
+        unless $binding =:= $obj || self.archetypes.generic {
             self.set_language_revision($obj, $binding.HOW.language-revision($binding));
 
-            my $type_env;
-            try {
-                my @result := $binding.HOW.body_block($binding)($obj, |@!pos_args, |%!named_args);
-                $type_env := @result[1];
-            }
+            my @result := $binding.HOW.body_block($binding)($binding, |@!pos_args, |%!named_args);
+            my $type_env := @result[1];
+
             for $binding.HOW.roles($binding, :!transitive) -> $role {
-                if $role.HOW.archetypes.generic && $type_env {
+                if $role.HOW.archetypes.generic {
                     $role := $role.HOW.instantiate_generic($role, $type_env);
                     unless $role.HOW.archetypes.composable || $role.HOW.archetypes.composalizable {
                         my $target-name := $obj.HOW.name($obj);
@@ -118,14 +115,14 @@ class Perl6::Metamodel::CurriedRoleHOW
                     self.add_role($obj, $role);
                 }
             }
+
             for $binding.HOW.parents($binding, :local) -> $parent {
-                if $parent.HOW.archetypes.generic && $type_env {
+                if $parent.HOW.archetypes.generic {
                     my $ins := $parent.HOW.instantiate_generic($parent, $type_env);
                     nqp::push(@!parent_typecheck_list, $ins)
                 }
             }
         }
-
         self.update_role_typecheck_list($obj);
     }
 
@@ -133,12 +130,10 @@ class Perl6::Metamodel::CurriedRoleHOW
         my $binding := self.bind($obj);
         my @rtl := [$!curried_role];
         unless $binding =:= $obj {
-            unless $binding =:= $!curried_role {
-                @rtl.push($binding);
-                nqp::splice(@rtl, $binding.HOW.role_typecheck_list($binding), +@rtl, 0);
-            }
-            nqp::splice(@rtl, self.roles_to_compose($obj), +@rtl, 0);
+            @rtl.push($binding) unless $binding =:= $!curried_role;
+            nqp::splice(@rtl, $binding.HOW.role_typecheck_list($binding), +@rtl, 0);
         }
+        nqp::splice(@rtl, self.roles_to_compose($obj), +@rtl, 0);
         @!role_typecheck_list := @rtl;
     }
 
