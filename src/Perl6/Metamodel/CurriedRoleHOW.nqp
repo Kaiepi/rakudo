@@ -157,9 +157,9 @@ class Perl6::Metamodel::CurriedRoleHOW
 
     method complete_parameterization($obj) {
         unless $!is_complete {
+            my @rtl := self.parameterize_roles($obj);
             $!is_complete := 1;
-            self.parameterize_roles($obj);
-            self.update_role_typecheck_list($obj);
+            @rtl
         }
     }
 
