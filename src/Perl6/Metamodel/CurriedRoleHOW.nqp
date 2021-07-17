@@ -129,12 +129,10 @@ class Perl6::Metamodel::CurriedRoleHOW
                     self.add_role($obj, $role);
                 }
             }
-            if $type_env {
-                for $binding.HOW.parents($binding, :local) -> $parent {
-                    if $parent.HOW.archetypes.generic {
-                        my $ins := $parent.HOW.instantiate_generic($parent, $type_env);
-                        nqp::push(@!parent_typecheck_list, $ins)
-                    }
+            for $binding.HOW.parents($binding, :local) -> $parent {
+                if $parent.HOW.archetypes.generic && $type_env {
+                    my $ins := $parent.HOW.instantiate_generic($parent, $type_env);
+                    nqp::push(@!parent_typecheck_list, $ins)
                 }
             }
         }
