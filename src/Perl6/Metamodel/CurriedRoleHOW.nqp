@@ -24,7 +24,7 @@ class Perl6::Metamodel::CurriedRoleHOW
     does Perl6::Metamodel::InvocationProtocol
 {
     has $!curried_role;
-    has $!binding;
+    has $!bind;
     has @!pos_args;
     has %!named_args;
     has @!role_typecheck_list;
@@ -69,9 +69,10 @@ class Perl6::Metamodel::CurriedRoleHOW
             }
             $name := $name ~ "[" ~ nqp::join(",", @pieces) ~ "]";
         }
-
+        # request a binding
+        my $bind := $curried_role.HOW.bind($curried_role) if nqp::can($curried_role.HOW, 'bind');
         my $meta := self.new(:curried_role($curried_role), :pos_args(@pos_args),
-            :named_args(%named_args), :name($name));
+            :named_args(%named_args), :name($name), :bind($bind));
         my $type := nqp::settypehll(nqp::newtype($meta, 'Uninstantiable'), 'Raku');
         $meta.set_name($type, $name);
         $meta.compose_invocation($type);
@@ -85,19 +86,7 @@ class Perl6::Metamodel::CurriedRoleHOW
     # binding is ourself for now. If the origin lacks a means of producing a
     # binding, we assume it's its own binding by default.
     method bind($obj) {
-        if $!binding =:= NQPMu {
-            if nqp::can($!curried_role.HOW, 'bind') {
-                my $binding := nqp::decont($!curried_role.HOW.bind($!curried_role, $obj));
-                return $obj if $binding =:= $obj;
-                $!binding := $binding
-            }
-            else {
-                $!binding := $!curried_role
-            }
-        }
-        else {
-            $!binding
-        }
+        $!bind =:= NQPMu ?? $!curried_role !! $!bind($obj)
     }
 
     method parameterize_roles($obj) {
@@ -105,12 +94,12 @@ class Perl6::Metamodel::CurriedRoleHOW
 
         # If we have a binding available, we can go ahead with a sort of lazy
         # composition.
-        unless $binding =:= $obj {
+        unless nqp::decont($binding) =:= $obj {
             self.set_language_revision($obj, $binding.HOW.language-revision($binding));
 
             my $type_env;
             try {
-                my @result := $binding.HOW.body_block($binding)($!curried_role, |@!pos_args, |%!named_args);
+                my @result := $binding.HOW.body_block($binding)($obj, |@!pos_args, |%!named_args);
                 $type_env := @result[1];
             }
             for $binding.HOW.roles($binding, :!transitive) -> $role {
